@@ -1,4 +1,5 @@
 import Globe from 'globe.gl';
+import { inject as injectAnalytics } from '@vercel/analytics';
 import { feature } from 'topojson-client';
 import worldTopo from 'world-atlas/countries-110m.json';
 import { renderFacts, renderWiki, renderNews, renderLoading, renderError } from './facts.js';
@@ -19,6 +20,12 @@ const DEFAULT_COLOR = '#9aa5b5';
 const SELECTED_COLOR = '#ffd166';
 
 const $ = (sel) => document.querySelector(sel);
+
+// Vercel Web Analytics (page views). The script and beacon are served same-origin under
+// /_vercel/insights, so the CSP needs no changes. Skipped locally, where /_vercel doesn't exist.
+if (import.meta.env.PROD && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+  injectAnalytics({ mode: 'production' });
+}
 const isMobile = () => window.innerWidth < 820;
 
 const state = {

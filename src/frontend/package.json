@@ -11,6 +11,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@vercel/analytics": "^2.0.1",
     "flag-icons": "^7.6.0",
     "globe.gl": "^2.46.2",
     "lucide-static": "^1.70.0",

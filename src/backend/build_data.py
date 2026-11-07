@@ -18,6 +18,13 @@ import pyarrow.parquet as pq
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW_CSV = ROOT / "data" / "raw" / "countries.csv"
+# SimpleMaps Basic World Countries Database (CC BY 4.0, attribution required).
+SIMPLEMAPS_CSV = ROOT / "data" / "raw" / "simplemaps_countries.csv"
+# World Bank WDI health extracts (CC BY 4.0), produced by extract_worldbank.py.
+WB_HEALTH_CSV = ROOT / "data" / "raw" / "worldbank_health.csv"
+WB_LIFE_EXP_CSV = ROOT / "data" / "raw" / "worldbank_life_expectancy.csv"
+WB_INCOME_CSV = ROOT / "data" / "raw" / "worldbank_income.csv"
+WB_GDP_CSV = ROOT / "data" / "raw" / "worldbank_gdp.csv"
 OUT_PARQUET = ROOT / "data" / "countries.parquet"
 
 # Timezones column is a JS-style literal: [{zoneName:'Asia\/Kabul',gmtOffset:16200,...}]
@@ -107,6 +114,72 @@ def hemisphere(lat: float, lng: float) -> str:
     return f"{ns} & {ew}"
 
 
+def load_simplemaps() -> pd.DataFrame:
+    """Extra per-country fields, keyed by ISO2. Only fields the main CSV lacks are used."""
+    # keep_default_na=False: Namibia's ISO2 code is "NA", which pandas would read as missing.
+    sm = pd.read_csv(SIMPLEMAPS_CSV, dtype=str, keep_default_na=False)
+    sm = sm.apply(lambda s: s.str.strip()).replace("", pd.NA)
+    sm = sm[sm["iso2"].notna()]  # drops a few territories without an ISO code
+    # Some codes cover several rows (e.g. PS = West Bank + Gaza Strip): keep the most complete one.
+    sm = (
+        sm.assign(_filled=sm.notna().sum(axis=1))
+        .sort_values("_filled", ascending=False, kind="stable")
+        .drop_duplicates("iso2")
+    )
+    website = sm["website"].where(sm["website"].str.match(r"^https?://", na=False))
+    return pd.DataFrame(
+        {
+            "iso2": sm["iso2"],
+            "primary_language": sm["language"],
+            "main_religion": sm["religion"],
+            "median_age": pd.to_numeric(sm["median_age"]).astype("float64"),
+            "driving_side": sm["driving_side"],
+            "un_member": sm["un_member"].map({"TRUE": True, "FALSE": False}).astype("boolean"),
+            "gov_website": website,
+        }
+    )
+
+
+def load_worldbank() -> pd.DataFrame:
+    """Per-country health indicators (latest value + world rank), life-expectancy series, income group."""
+    health = pd.read_csv(WB_HEALTH_CSV)
+    # Rank within each indicator among countries that report it: 1 = highest value.
+    health["rank"] = health.groupby("indicator")["value"].rank(ascending=False, method="min").astype(int)
+    health["count"] = health.groupby("indicator")["value"].transform("size")
+    health_lists = (
+        health.sort_values(["iso3", "indicator"])
+        .groupby("iso3")[["indicator", "value", "year", "rank", "count"]]
+        .apply(lambda g: g.rename(columns={"indicator": "code"}).to_dict("records"))
+        .rename("health")
+    )
+    series = (
+        pd.read_csv(WB_LIFE_EXP_CSV)
+        .sort_values(["iso3", "year"])
+        .groupby("iso3")[["year", "value"]]
+        .apply(lambda g: g.to_dict("records"))
+        .rename("life_expectancy_series")
+    )
+    income = pd.read_csv(WB_INCOME_CSV).set_index("iso3")["income_group"]
+    return pd.concat([health_lists, series, income], axis=1).rename_axis("iso3").reset_index()
+
+
+def sig3(x: float) -> float:
+    """Round to 3 significant figures: plenty for a chart, and compresses far better."""
+    return float(f"{x:.3g}")
+
+
+def load_gdp() -> pd.DataFrame:
+    """World Bank GDP (current US$): latest value + year, and the full yearly series."""
+    gdp = pd.read_csv(WB_GDP_CSV).sort_values(["iso3", "year"])
+    latest = gdp.groupby("iso3").last().rename(columns={"value": "wb_gdp_usd", "year": "gdp_year"})
+    series = (
+        gdp.groupby("iso3")[["year", "value"]]
+        .apply(lambda g: g.assign(value=g["value"].map(sig3)).to_dict("records"))
+        .rename("gdp_series")
+    )
+    return latest.join(series).reset_index()
+
+
 def main() -> None:
     df = pd.read_csv(RAW_CSV, dtype=str, keep_default_na=False)
     df = df.apply(lambda s: s.str.strip())
@@ -137,20 +210,46 @@ def main() -> None:
         }
     )
 
+    extra = load_simplemaps()
+    out = out.merge(extra, on="iso2", how="left", validate="one_to_one")
+    extra_cols = [c for c in extra.columns if c != "iso2"]
+    unmatched = out.loc[out[extra_cols].isna().all(axis=1), "name"].tolist()
+    if unmatched:
+        print(f"note: no SimpleMaps match for {unmatched}")
+
+    wb = load_worldbank()
+    out = out.merge(wb, on="iso3", how="left", validate="one_to_one")
+    for col in ("health", "life_expectancy_series"):
+        out[col] = out[col].apply(lambda v: v if isinstance(v, list) else [])
+    print(f"World Bank health data for {sum(bool(h) for h in out['health'])} of {len(out)} countries")
+
+    # GDP: World Bank (newer, with a year) where available; the original CSV otherwise.
+    out = out.merge(load_gdp(), on="iso3", how="left", validate="one_to_one")
+    out["gdp_series"] = out["gdp_series"].apply(lambda v: v if isinstance(v, list) else [])
+    from_csv = out["wb_gdp_usd"].isna() & out["gdp_musd"].notna()
+    out["gdp_usd"] = out["wb_gdp_usd"].fillna(out["gdp_musd"].astype("float64") * 1_000_000)
+    out["gdp_year"] = out["gdp_year"].astype("Int16")
+    print(f"GDP: {int(out['wb_gdp_usd'].notna().sum())} from World Bank, {int(from_csv.sum())} from countries.csv "
+          f"({', '.join(out.loc[from_csv, 'name'])})")
+    out = out.drop(columns=["wb_gdp_usd", "gdp_musd"])
+
     # Derived facts
     area = out["area_sq_km"].where(out["area_sq_km"] > 0)
     out["population_density"] = (out["population"].astype("float64") / area).round(1)
     out["gdp_per_capita_usd"] = (
-        out["gdp_musd"].astype("float64") * 1_000_000 / out["population"].astype("float64")
+        out["gdp_usd"] / out["population"].astype("float64")
     ).round(0)
     out["hemisphere"] = [hemisphere(a, b) for a, b in zip(out["latitude"], out["longitude"])]
     for col, rank_col in [
         ("area_sq_km", "area_rank"),
         ("population", "population_rank"),
-        ("gdp_musd", "gdp_rank"),
+        ("gdp_usd", "gdp_rank"),
         ("population_density", "density_rank"),
     ]:
         out[rank_col] = out[col].astype("float64").rank(ascending=False, method="min").astype("Int32")
+    # 1 = youngest population
+    out["median_age_rank"] = out["median_age"].rank(ascending=True, method="min").astype("Int32")
+    out["median_age_rank_oldest"] = out["median_age"].rank(ascending=False, method="min").astype("Int32")
     out["timezones"] = df["timezones"].map(parse_timezones)
 
     # Exact English Wikipedia titles via Wikidata (avoids disambiguation pages,
@@ -174,12 +273,27 @@ def main() -> None:
             ]
         )
     )
-    table = pa.Table.from_pandas(out, preserve_index=False)
-    table = table.set_column(
-        table.schema.get_field_index("timezones"),
-        "timezones",
-        pa.array(out["timezones"].tolist(), type=tz_type),
+    health_type = pa.list_(
+        pa.struct(
+            [
+                ("code", pa.string()),
+                ("value", pa.float64()),
+                ("year", pa.int16()),
+                ("rank", pa.int16()),
+                ("count", pa.int16()),
+            ]
+        )
     )
+    series_type = pa.list_(pa.struct([("year", pa.int16()), ("value", pa.float64())]))
+    nested = {
+        "timezones": tz_type,
+        "health": health_type,
+        "life_expectancy_series": series_type,
+        "gdp_series": series_type,
+    }
+    table = pa.Table.from_pandas(out.drop(columns=list(nested)), preserve_index=False)
+    for name, typ in nested.items():
+        table = table.append_column(name, pa.array(out[name].tolist(), type=typ))
 
     OUT_PARQUET.parent.mkdir(parents=True, exist_ok=True)
     pq.write_table(table, OUT_PARQUET, compression="zstd")

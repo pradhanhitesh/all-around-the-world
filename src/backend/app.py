@@ -76,7 +76,9 @@ app.add_middleware(SecurityMiddleware, limiter=TokenBucketLimiter(per_minute=20,
 # CDN caching (Vercel or any CDN honouring s-maxage). Browsers keep a short copy;
 # the CDN keeps a long one and serves stale while it refreshes in the background.
 # Vercel purges its CDN cache on every deploy, so static data can be cached "forever".
-CACHE_STATIC = "public, max-age=3600, s-maxage=31536000"
+# Browsers revalidate static data every time (max-age=0) so a deploy with new data shows
+# up immediately; the CDN (purged on each deploy) still answers those requests instantly.
+CACHE_STATIC = "public, max-age=0, must-revalidate, s-maxage=31536000"
 CACHE_WIKI = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
 CACHE_NEWS = "public, max-age=300, s-maxage=900, stale-while-revalidate=3600"
 NO_STORE = {"Cache-Control": "no-store"}  # never cache errors / throttling

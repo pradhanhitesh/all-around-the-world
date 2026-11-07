@@ -4,3 +4,6 @@ node_modules/
 src/frontend/dist/
 .DS_Store
 .pytest_cache/
+
+# Raw source data stays local (not redistributed); the built parquet is committed.
+data/raw/*.csv

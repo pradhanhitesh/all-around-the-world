@@ -4,6 +4,8 @@ import { feature } from 'topojson-client';
 import worldTopo from 'world-atlas/countries-110m.json';
 import { renderFacts, renderWiki, renderNews, renderLoading, renderError } from './facts.js';
 import { flag, icon } from './icons.js';
+import { renderHealth } from './health.js';
+import { handleChartPointer } from './chart.js';
 
 // Atlas features without an ISO numeric id -> country they belong to (by UN recognition).
 const NAMELESS_FEATURE_MAP = { Kosovo: 'XKX', 'N. Cyprus': 'CYP', Somaliland: 'SOM' };
@@ -50,15 +52,25 @@ const HTTP_MESSAGES = {
   503: 'the server is busy — try again shortly',
 };
 
-async function api(path) {
-  const res = await fetch(path);
+async function api(path, init) {
+  const res = await fetch(path, init);
   if (!res.ok) throw new Error(HTTP_MESSAGES[res.status] ?? `${res.status} ${res.statusText}`);
   return res.json();
 }
 
 // Each sheet tab is one view: where its data lives, how to render it, how long it stays fresh.
 const VIEWS = {
-  facts: { label: 'Facts', icon: 'info', url: (iso3) => `/api/countries/${iso3}`, render: (c, d) => renderFacts(d) },
+  facts: {
+    label: 'Facts',
+    icon: 'info',
+    url: (iso3) => `/api/countries/${iso3}`,
+    render: (c, d) => renderFacts(d),
+    // Always revalidate: facts change only on deploy, and an older build told browsers to
+    // keep them for an hour. 'no-cache' ignores any such stale copy (the CDN still answers fast).
+    fetch: { cache: 'no-cache' },
+  },
+  // Health uses the facts record (World Bank data is part of it), so no extra request.
+  health: { label: 'Health', icon: 'heart-pulse', source: 'facts', render: renderHealth },
   news: {
     label: 'News',
     icon: 'newspaper',
@@ -69,18 +81,23 @@ const VIEWS = {
   wiki: { label: 'Wikipedia', icon: 'book-open', url: (iso3) => `/api/countries/${iso3}/wiki`, render: renderWiki },
 };
 
+// Views can share another view's data (health -> facts); cache and fetch by the source view.
+const sourceOf = (view) => VIEWS[view].source ?? view;
+
 function cached(view, iso3) {
+  view = sourceOf(view);
   const hit = state.cache.get(`${view}:${iso3}`);
   const ttl = VIEWS[view].ttl;
   return hit && (!ttl || Date.now() - hit.at < ttl) ? hit.data : undefined;
 }
 
 function load(view, iso3) {
+  view = sourceOf(view);
   const key = `${view}:${iso3}`;
   const hit = cached(view, iso3);
   if (hit) return Promise.resolve(hit);
   if (!state.pending.has(key)) {
-    const p = api(VIEWS[view].url(iso3))
+    const p = api(VIEWS[view].url(iso3), VIEWS[view].fetch)
       .then((data) => {
         state.cache.set(key, { data, at: Date.now() });
         return data;
@@ -93,7 +110,9 @@ function load(view, iso3) {
 
 /** Warm the other tabs in the background so switching is instant. Errors surface only when opened. */
 function prefetchOthers(iso3, current) {
-  for (const view of Object.keys(VIEWS)) if (view !== current) load(view, iso3).catch(() => {});
+  const sources = new Set(Object.keys(VIEWS).map(sourceOf));
+  sources.delete(sourceOf(current));
+  for (const view of sources) load(view, iso3).catch(() => {});
 }
 
 // ---------------------------------------------------------------- globe
@@ -301,6 +320,11 @@ $('#sheet-body').addEventListener(
   true, // 'toggle' doesn't bubble; listen in the capture phase
 );
 
+// Trend chart hover (crosshair + tooltip): GDP in Facts, life expectancy in Health.
+for (const type of ['pointermove', 'pointerdown']) $('#sheet-body').addEventListener(type, handleChartPointer);
+// pointerleave doesn't bubble; capture it, but only act when the chart itself is left.
+$('#sheet-body').addEventListener('pointerleave', (e) => e.target.classList?.contains('trend-chart') && handleChartPointer(e), true);
+
 // "Try again" after a failed load.
 $('#sheet-body').addEventListener('click', (e) => {
   if (e.target.closest('[data-action="retry"]') && state.selected) {
@@ -454,7 +478,7 @@ $('#random').addEventListener('click', () => {
 
 // ---------------------------------------------------------------- routing
 function fromHash() {
-  const m = location.hash.match(/^#\/([A-Za-z]{3})(?:\/(news|wiki))?$/);
+  const m = location.hash.match(/^#\/([A-Za-z]{3})(?:\/(health|news|wiki))?$/);
   if (!m) return;
   const iso3 = m[1].toUpperCase();
   const view = m[2] ?? 'facts';
@@ -464,7 +488,7 @@ window.addEventListener('hashchange', fromHash);
 
 // ---------------------------------------------------------------- boot
 async function boot() {
-  const { countries } = await api('/api/countries');
+  const { countries } = await api('/api/countries', { cache: 'no-cache' });
   state.countries = countries;
   for (const c of countries) state.byIso3.set(c.iso3, c);
   const byNumeric = new Map(countries.map((c) => [String(c.numeric_code).padStart(3, '0'), c]));

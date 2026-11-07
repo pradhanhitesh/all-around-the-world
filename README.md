@@ -6,8 +6,13 @@ Spin the globe, tap a country (or search / 🎲), get a facts sheet.
 ## Layout
 
 ```
-data/raw/countries.csv        source data
+data/raw/*.csv                local only, gitignored — see data/raw/SOURCES.md
+data/raw/countries.csv        source data (ISO codes, capitals, population, GDP, timezones)
+data/raw/simplemaps_countries.csv  SimpleMaps basic countries (CC BY 4.0): language, religion, median age, driving side, UN, website
+data/raw/worldbank_*.csv      World Bank WDI health + GDP extracts (CC BY 4.0) — see extract_worldbank.py
+data/raw/SOURCES.md           data sources and licenses
 data/countries.parquet        single source of truth for the API (generated)
+src/backend/extract_worldbank.py  WDI bulk download -> small health CSVs in data/raw
 src/backend/build_data.py     CSV -> parquet (types, parsed timezones, ranks, derived facts)
 api/index.py                  Vercel serverless entrypoint (re-exports the FastAPI app)
 vercel.json                   Vercel build, rewrites, security + cache headers
@@ -57,7 +62,7 @@ Deploy env vars: `APP_CONTACT` (URL/email for the outbound User-Agent — Wikime
 policy asks for one), `ENABLE_DOCS=1` to expose `/docs`. Behind a reverse proxy, add
 `--proxy-headers --forwarded-allow-ips=<proxy ip>` so rate limiting sees real client IPs.
 
-Deep links: `/#/IND` (facts), `/#/IND/news` (headlines), `/#/IND/wiki` (Wikipedia article).
+Deep links: `/#/IND` (facts), `/#/IND/health`, `/#/IND/news` (headlines), `/#/IND/wiki` (Wikipedia article).
 
 ## Notes
 

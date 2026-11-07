@@ -3,6 +3,8 @@ import 'flag-icons/css/flag-icons.min.css';
 import {
   ArrowLeft, BookOpen, Banknote, Clock, ExternalLink, Globe, Grid3x3, Hash, Landmark,
   MapPin, Maximize, Phone, Sparkles, TrendingUp, User, Users, Wallet, X, ChevronDown, Info, Newspaper,
+  Languages, HandHeart, Hourglass, Car,
+  Baby, Stethoscope, Bed, Syringe, Droplet, Cigarette, HeartPulse,
 } from 'lucide-static';
 
 const ICONS = {
@@ -11,6 +13,9 @@ const ICONS = {
   'map-pin': MapPin, maximize: Maximize, phone: Phone, sparkles: Sparkles,
   'trending-up': TrendingUp, user: User, users: Users, wallet: Wallet, x: X,
   'chevron-down': ChevronDown, info: Info, newspaper: Newspaper,
+  languages: Languages, 'hand-heart': HandHeart, hourglass: Hourglass, car: Car,
+  baby: Baby, stethoscope: Stethoscope, bed: Bed, syringe: Syringe, droplet: Droplet,
+  cigarette: Cigarette, 'heart-pulse': HeartPulse,
 };
 
 /** Returns an inline <svg> string for a Lucide icon, sized via CSS (.ico). */

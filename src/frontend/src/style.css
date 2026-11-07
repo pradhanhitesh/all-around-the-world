@@ -220,7 +220,8 @@ html, body {
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-selected="true"] { background: rgba(255, 209, 102, 0.14); color: var(--accent); }
 .tabs button:focus-visible { box-shadow: inset 0 0 0 2px rgba(255, 209, 102, 0.6); }
-@media (max-width: 360px) { .tabs button { padding: 0 9px; } .tabs button .ico { display: none; } }
+/* Four tabs: drop icons on phones so labels fit beside the close button. */
+@media (max-width: 479.98px) { .tabs button { padding: 0 10px; } .tabs button .ico { display: none; } }
 #sheet-body {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -239,8 +240,9 @@ html, body {
     border: 1px solid var(--line);
     border-bottom: 0;
   }
-  .grid { grid-template-columns: repeat(3, 1fr); }
-  .stat.wide { grid-column: span 3; }
+  #sheet .grid { grid-template-columns: repeat(3, 1fr); }
+  #sheet .stat.wide { grid-column: auto; } /* 15 tiles fill 3 columns evenly */
+  #sheet .health-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 /* Laptop / desktop: docked full-height panel on the right. The canvas stays full size;
@@ -310,7 +312,9 @@ h2.section { display: flex; align-items: center; gap: 6px; font-size: 13px; colo
 .more { margin-top: 6px; }
 .more summary { cursor: pointer; color: var(--accent); font-size: 14px; padding: 6px 0; }
 
-.footer-links { margin-top: 16px; font-size: 13px; color: var(--muted); }
+.footer-links { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 16px; font-size: 13px; color: var(--muted); }
+.data-credit { margin: 14px 0 0; font-size: 11.5px; color: var(--muted); line-height: 1.5; }
+.data-credit a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
 .footer-links a, .wiki-credit a { color: var(--accent); display: inline-flex; align-items: center; gap: 3px; }
 
 /* ---------- Wikipedia reader ---------- */
@@ -411,3 +415,64 @@ h2.section { display: flex; align-items: center; gap: 6px; font-size: 13px; colo
 .globe-tip-text { display: flex; flex-direction: column; line-height: 1.2; }
 .globe-tip-text b { font-size: 13px; font-weight: 600; }
 .globe-tip-text small { font-size: 11.5px; color: var(--muted); }
+
+/* ---------- Income badge (facts header) ---------- */
+.hero .badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---------- Health tab ---------- */
+.stat .v .unit { font-size: 12px; font-weight: 500; color: var(--muted); }
+.le-hero {
+  margin: 4px 0 6px;
+  padding: 14px 14px 8px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+}
+.le-hero .k { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; }
+.le-hero .k .ico { width: 14px; height: 14px; color: var(--accent); }
+.le-hero .r { color: var(--muted); font-size: 12px; }
+.le-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.le-value { font-size: 30px; font-weight: 700; line-height: 1.15; margin-top: 2px; }
+.le-value span { font-size: 15px; font-weight: 500; color: var(--muted); }
+.le-split { display: flex; gap: 14px; margin: 4px 0 0; text-align: right; }
+.le-split dt { font-size: 11.5px; color: var(--muted); }
+.le-split dd { margin: 0; font-size: 16px; font-weight: 600; }
+.trend-chart { position: relative; margin: 8px 0 0; touch-action: pan-y; }
+.trend-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.tc-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.tc-base { stroke: var(--line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tc-end { fill: var(--accent); stroke: var(--panel-solid); stroke-width: 2; }
+.tc-label { font-size: 11px; font-weight: 600; fill: var(--text); }
+.tc-axis { font-size: 10px; fill: var(--muted); }
+.tc-cross { stroke: rgba(255, 255, 255, 0.35); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.tc-dot { fill: var(--accent); stroke: var(--panel-solid); stroke-width: 2; }
+.tc-hit { cursor: crosshair; }
+.tc-tip {
+  position: absolute;
+  top: -6px;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: var(--panel-solid);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.tc-tip span { color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+.chart-note { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
+.tc-label { transition: opacity 0.15s; }
+.trend-chart.hovering .tc-label { opacity: 0.15; }

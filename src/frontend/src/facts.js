@@ -1,5 +1,6 @@
 // Renders the facts panel for one country (full record from /api/countries/:iso3).
 import { icon, flag } from './icons.js';
+import { trendChart } from './chart.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -32,6 +33,9 @@ function highlights(c) {
     const pct = Math.round(((total - area) / total) * 100);
     out.push(`Bigger than ${pct}% of countries and territories`);
   }
+  if (c.median_age_rank && c.median_age_rank <= 10) out.push(`One of the youngest populations (median age ${c.median_age})`);
+  if (c.median_age_rank_oldest && c.median_age_rank_oldest <= 10) out.push(`One of the oldest populations (median age ${c.median_age})`);
+  if (c.un_member === false) out.push('Not a UN member state');
   const offsets = new Set((c.timezones ?? []).map((z) => z.gmt_offset));
   if (offsets.size > 2) out.push(`Spans ${offsets.size} UTC offsets`);
   if (c.hemisphere) out.push(`Lies in the ${c.hemisphere} hemispheres`);
@@ -67,7 +71,7 @@ export function renderFacts(c) {
       : tz.map(tzRow).join('');
 
   const pop = c.population;
-  const gdp = c.gdp_musd ? c.gdp_musd * 1e6 : null;
+  const gdp = c.gdp_usd ?? null;
 
   return `
     <div class="hero">
@@ -75,6 +79,7 @@ export function renderFacts(c) {
       <div>
         <h1>${esc(c.name)}</h1>
         <div class="sub">${esc([c.subregion, c.region].filter(Boolean).join(' · ') || 'Unassigned region')}</div>
+        ${c.income_group ? `<div class="badge">${esc(c.income_group)}</div>` : ''}
       </div>
     </div>
 
@@ -89,19 +94,34 @@ export function renderFacts(c) {
       ${stat('users', 'Population', pop != null ? compact.format(pop) : '—', pop != null ? `${nf.format(pop)} · ${rankText(c.population_rank, total)}` : '')}
       ${stat('maximize', 'Area', c.area_sq_km != null ? `${compact.format(c.area_sq_km)} km²` : '—', rankText(c.area_rank, total))}
       ${stat('grid', 'Density', c.population_density != null ? `${nf.format(c.population_density)} /km²` : '—', rankText(c.density_rank, total))}
-      ${stat('trending-up', 'GDP', gdp ? usdCompact.format(gdp) : '—', rankText(c.gdp_rank, total))}
+      ${stat('trending-up', 'GDP', gdp ? usdCompact.format(gdp) : '—', [rankText(c.gdp_rank, total), c.gdp_year].filter(Boolean).join(' · '))}
       ${stat('wallet', 'GDP per capita', c.gdp_per_capita_usd ? usd.format(c.gdp_per_capita_usd) : '—')}
       ${stat('banknote', 'Currency', `${esc(c.currency)}`, c.currency_name)}
       ${stat('phone', 'Calling code', c.phonecode ? `+${esc(c.phonecode)}` : '—')}
       ${stat('globe', 'Internet TLD', esc(c.tld))}
       ${stat('user', 'People', esc(c.nationality))}
+      ${stat('languages', 'Language', esc(c.primary_language), c.primary_language ? 'Most spoken' : '')}
+      ${stat('hand-heart', 'Religion', esc(c.main_religion), c.main_religion ? 'Largest group' : '')}
+      ${stat('hourglass', 'Median age', c.median_age != null ? `${c.median_age} years` : '')}
+      ${stat('car', 'Drives on', c.driving_side ? `${esc(c.driving_side[0].toUpperCase() + c.driving_side.slice(1))}` : '')}
       ${stat('hash', 'ISO codes', `${esc(c.iso2)} · ${esc(c.iso3)}`, `Numeric ${c.numeric_code}`)}
       ${stat('map-pin', 'Coordinates', coords(c.latitude, c.longitude), '', true)}
     </div>
 
+    ${gdpChart(c)}
+
     ${tz.length ? `<h2 class="section">${icon('clock')}Time zones · local time now</h2>${tzHtml}` : ''}
 
-    ${c.wikidata_id ? `<div class="footer-links"><a href="https://www.wikidata.org/wiki/${encodeURIComponent(c.wikidata_id)}" target="_blank" rel="noopener">Wikidata ${esc(c.wikidata_id)}${icon('external-link', 'ico-sm')}</a></div>` : ''}
+    <div class="footer-links">
+      ${safeUrl(c.gov_website) ? `<a href="${esc(c.gov_website)}" target="_blank" rel="noopener noreferrer">Official website${icon('external-link', 'ico-sm')}</a>` : ''}
+      ${c.wikidata_id ? `<a href="https://www.wikidata.org/wiki/${encodeURIComponent(c.wikidata_id)}" target="_blank" rel="noopener">Wikidata ${esc(c.wikidata_id)}${icon('external-link', 'ico-sm')}</a>` : ''}
+    </div>
+    <p class="data-credit">GDP and income group from the
+      <a href="https://data.worldbank.org/" target="_blank" rel="noopener">World Bank</a>
+      (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).
+      Language, religion, median age, driving side and UN status from
+      <a href="https://simplemaps.com/data/countries" target="_blank" rel="noopener">SimpleMaps</a>
+      (<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener">CC BY 4.0</a>).</p>
   `;
 }
 
@@ -140,7 +160,7 @@ export function sanitize(html) {
   return root.innerHTML;
 }
 
-const VIEW_LABEL = { facts: 'facts', news: 'headlines', wiki: 'Wikipedia article' };
+const VIEW_LABEL = { facts: 'facts', health: 'health data', news: 'headlines', wiki: 'Wikipedia article' };
 
 export function renderLoading(c, view) {
   return `<div class="wiki"><h1>${flag(c.iso2)}${esc(c.name)}</h1><p class="muted">Loading ${VIEW_LABEL[view]}…</p></div>`;
@@ -213,6 +233,20 @@ export function renderWiki(c, article) {
         <a href="${esc(article.url)}" target="_blank" rel="noopener">View original article${icon('external-link', 'ico-sm')}</a>
       </p>
     </article>`;
+}
+
+function gdpChart(c) {
+  const series = c.gdp_series ?? [];
+  if (series.length < 2) return '';
+  const first = series[0];
+  const last = series[series.length - 1];
+  return `<h2 class="section">${icon('trending-up')}GDP since ${first.year}</h2>
+    ${trendChart(series, {
+      format: 'usd',
+      zero: true,
+      summary: `GDP of ${c.name} went from ${usdCompact.format(first.value)} in ${first.year} to ${usdCompact.format(last.value)} in ${last.year}, in current US dollars.`,
+    })}
+    <p class="chart-note">Current US$, not adjusted for inflation. Source: World Bank.</p>`;
 }
 
 function tzRow(z) {

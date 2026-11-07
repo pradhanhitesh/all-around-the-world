@@ -82,5 +82,3 @@ Deep links: `/#/IND` (facts), `/#/IND/news` (headlines), `/#/IND/wiki` (Wikipedi
 - CSP (`script-src 'self'`, no framing), nosniff, referrer and permissions policies on every response.
 - Wikipedia HTML is sanitized client-side (allowlist); news text is escaped, links must be http(s).
 - Errors returned to clients are generic; details go to server logs.
-# all-around-the-world
-# all-around-the-world

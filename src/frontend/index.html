@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#070b14" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>All Around the World</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23ffd166' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><circle cx='12' cy='12' r='10'/><path d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20'/><path d='M2 12h20'/></svg>" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="globe" aria-label="Interactive globe"></div>
+
+    <header class="topbar">
+      <div class="search">
+        <button id="search-toggle" class="icon-btn" title="Search (/)" aria-label="Search countries" aria-expanded="false" aria-controls="search">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        </button>
+        <input id="search" type="search" placeholder="Country or capital" tabindex="-1" autocomplete="off" enterkeyhint="go" aria-label="Search countries or capitals" />
+        <ul id="results" role="listbox" hidden></ul>
+      </div>
+      <button id="random" class="icon-btn" title="Random country" aria-label="Random country">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 3h5v5" /><path d="M4 20 21 3" /><path d="M21 16v5h-5" /><path d="m15 15 6 6" /><path d="M4 4l5 5" /></svg>
+      </button>
+    </header>
+
+    <div id="loading">Loading the world…</div>
+
+    <section id="sheet" hidden>
+      <div class="handle" id="handle" aria-hidden="true"></div>
+      <div class="sheet-head">
+        <nav class="tabs" id="tabs" role="tablist" aria-label="Country views"></nav>
+        <button id="close" class="icon-btn close" aria-label="Close">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6 6 18" /><path d="m6 6 12 12" /></svg>
+        </button>
+      </div>
+      <div id="sheet-body" role="tabpanel" aria-live="polite"></div>
+    </section>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

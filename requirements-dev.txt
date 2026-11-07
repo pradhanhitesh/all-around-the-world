@@ -1,0 +1,6 @@
+# Local development, data build, and tests.
+-r requirements.txt
+pandas
+uvicorn[standard]
+pytest
+httpx

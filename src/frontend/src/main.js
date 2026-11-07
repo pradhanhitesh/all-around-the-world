@@ -26,7 +26,11 @@ const $ = (sel) => document.querySelector(sel);
 if (import.meta.env.PROD && !['localhost', '127.0.0.1'].includes(location.hostname)) {
   injectAnalytics({ mode: 'production' });
 }
-const isMobile = () => window.innerWidth < 820;
+// Must match the breakpoints in style.css.
+const desktopMQ = matchMedia('(min-width: 1024px)');
+const phoneMQ = matchMedia('(max-width: 639.98px)');
+const isDesktop = () => desktopMQ.matches;
+const isPhone = () => phoneMQ.matches;
 
 const state = {
   countries: [], // summary list
@@ -155,15 +159,19 @@ function lighten(hex) {
 
 function tooltip(c) {
   if (!c) return '';
-  return `<div style="padding:6px 10px;border-radius:8px;background:#0e1422;border:1px solid rgba(255,255,255,.1);font:13px system-ui">
-    ${flag(c.iso2)} <b>${c.name}</b><br><small style="color:#8d98ad">Capital: ${c.capital ?? '—'}</small></div>`;
+  const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  return `<div class="globe-tip">${flag(c.iso2)}<span class="globe-tip-text"><b>${esc(c.name)}</b>${
+    c.capital ? `<small>${esc(c.capital)}</small>` : ''
+  }</span></div>`;
 }
 
-function resize() {
-  globe.width(window.innerWidth).height(window.innerHeight);
-}
-window.addEventListener('resize', resize);
-resize();
+// Size the canvas to #globe's box (window resizes). Opening the laptop side panel doesn't
+// resize it: CSS slides the whole canvas with a transform instead, which stays smooth.
+const globeEl = $('#globe');
+new ResizeObserver(([entry]) => {
+  const { width, height } = entry.contentRect;
+  if (width && height) globe.width(width).height(height);
+}).observe(globeEl);
 
 // Stop spinning once the user grabs the globe.
 $('#globe').addEventListener('pointerdown', () => (controls.autoRotate = false), { passive: true });
@@ -195,7 +203,6 @@ async function showView(iso3, view) {
   state.view = view;
   setHash(iso3, view);
   updateTabs(view);
-  sheet.classList.toggle('reading', view !== 'facts');
   prefetchOthers(iso3, view);
 
   const hit = cached(view, iso3);
@@ -228,9 +235,10 @@ function flyTo(c) {
   const area = c.area_sq_km ?? 1000;
   const altitude = Math.min(2.2, Math.max(0.9, 0.75 + Math.sqrt(area) / 2500));
   let { latitude: lat, longitude: lng } = c;
-  // Nudge the camera so the country isn't hidden behind the facts panel.
-  if (isMobile()) lat -= altitude * 11;
-  else lng += altitude * 14;
+  // Phone/tablet: the bottom sheet covers the lower part of the screen, so aim the camera
+  // lower to place the country in the visible strip above it. Laptop: the globe already
+  // shrinks beside the panel, so no nudge is needed.
+  if (!isDesktop()) lat -= altitude * (isPhone() ? 13 : 11);
   globe.pointOfView({ lat, lng, altitude }, 1200);
 }
 
@@ -243,6 +251,7 @@ function openSheet(html, key) {
   body.dataset.key = key;
   body.scrollTop = 0;
   sheet.hidden = false;
+  document.body.classList.add('panel-open');
 }
 
 // Tab bar: Facts · News · Wikipedia
@@ -273,7 +282,7 @@ tabs.addEventListener('keydown', (e) => {
 
 function closeSheet() {
   sheet.hidden = true;
-  sheet.classList.remove('reading');
+  document.body.classList.remove('panel-open');
 }
 
 // Wikipedia reader: one section open at a time, and scroll the opened one to the top.
@@ -311,7 +320,7 @@ document.addEventListener('keydown', (e) => {
   let dy = 0;
   const handle = $('#handle');
   handle.addEventListener('pointerdown', (e) => {
-    if (!isMobile()) return;
+    if (isDesktop()) return;
     startY = e.clientY;
     dy = 0;
     sheet.classList.add('dragging');
@@ -474,7 +483,7 @@ async function boot() {
   globe.polygonsData(state.polygons).pointsData(dots);
 
   $('#loading').remove();
-  globe.pointOfView({ lat: 20, lng: 78, altitude: isMobile() ? 3.2 : 2.4 });
+  globe.pointOfView({ lat: 20, lng: 78, altitude: isPhone() ? 3.2 : 2.4 });
   fromHash();
 }
 

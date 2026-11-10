@@ -85,6 +85,7 @@ export const THEMES = {
     ocean: { color: '#ffffff', emissive: '#000000' },
     image: '/textures/earth-night.jpg',
     glow: 0.9, // city lights shine on their own (texture also drives the emissive channel)
+    noShade: true, // already a night view: no day/night shading on top
     stroke: 'rgba(255, 209, 102, 0.22)',
     side: (s) => (s.selected ? 'rgba(255, 209, 102, 0.3)' : 'rgba(0, 0, 0, 0)'),
     cap(region, s) {
@@ -98,6 +99,23 @@ export const THEMES = {
 
 export const DEFAULT_THEME = 'regions';
 const STORAGE_KEY = 'aatw-globe-theme';
+const DAYNIGHT_KEY = 'aatw-day-night';
+
+export function savedDayNight() {
+  try {
+    return localStorage.getItem(DAYNIGHT_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveDayNight(on) {
+  try {
+    localStorage.setItem(DAYNIGHT_KEY, on ? 'on' : 'off');
+  } catch {
+    /* not critical */
+  }
+}
 
 export function savedTheme() {
   try {

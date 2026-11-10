@@ -8,13 +8,19 @@ import { flag, icon } from './icons.js';
 import { renderHealth } from './health.js';
 import { renderAir, renderAirError } from './air.js';
 import { handleChartPointer } from './chart.js';
-import { THEMES, savedTheme, saveTheme } from './themes.js';
+import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight } from './themes.js';
+import { createNightShade } from './daynight.js';
+import { METRICS, METRIC_SURFACE, NO_DATA, quantileBreaks, colorFor, legend, savedMetric, saveMetric } from './metrics.js';
 
 // Atlas features without an ISO numeric id -> country they belong to (by UN recognition).
 const NAMELESS_FEATURE_MAP = { Kosovo: 'XKX', 'N. Cyprus': 'CYP', Somaliland: 'SOM' };
 
 // Active globe theme (see themes.js); remembered per visitor.
 let theme = THEMES[savedTheme()];
+// Active "Colour by" metric (null = theme colours) and its class breaks.
+let metric = null;
+let breaks = [];
+const GOLD = '#ffd166';
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -118,9 +124,9 @@ const globe = new Globe($('#globe'), { animateIn: true })
   .showAtmosphere(true)
   .atmosphereAltitude(0.18)
   .polygonAltitude((d) => (d.iso3 === state.selected ? 0.05 : d === state.hovered ? 0.02 : 0.008))
-  .polygonCapColor((d) => theme.cap(d.country?.region, shapeState(d)))
-  .polygonSideColor((d) => theme.side(shapeState(d)))
-  .polygonStrokeColor(() => theme.stroke)
+  .polygonCapColor((d) => (metric ? metricCap(d) : theme.cap(d.country?.region, shapeState(d))))
+  .polygonSideColor((d) => (metric ? 'rgba(0, 0, 0, 0.3)' : theme.side(shapeState(d))))
+  .polygonStrokeColor(() => (metric ? METRIC_SURFACE.stroke : theme.stroke))
   .polygonLabel((d) => tooltip(d.country))
   .polygonsTransitionDuration(250)
   .onPolygonHover((d) => {
@@ -134,7 +140,13 @@ const globe = new Globe($('#globe'), { animateIn: true })
   .pointLng('longitude')
   .pointAltitude((d) => (d.iso3 === state.selected ? 0.06 : 0.012))
   .pointRadius((d) => (d.iso3 === state.selected ? 0.9 : 0.55))
-  .pointColor((d) => theme.point(d.region, { selected: d.iso3 === state.selected }))
+  .pointColor((d) =>
+    metric
+      ? d.iso3 === state.selected
+        ? GOLD
+        : colorFor(d[metric], breaks)
+      : theme.point(d.region, { selected: d.iso3 === state.selected }),
+  )
   .pointLabel((d) => tooltip(d))
   .pointsMerge(false)
   .onPointClick((d) => select(d.iso3))
@@ -146,50 +158,110 @@ const globe = new Globe($('#globe'), { animateIn: true })
   .ringMaxRadius(4)
   .ringPropagationSpeed(2.5)
   .ringRepeatPeriod(1100)
-  .onGlobeClick(() => {}); // keep panel open on ocean taps
+  .onGlobeClick(() => {}) // keep panel open on ocean taps
+  // Capital pin for the selected country (HTML, so the label stays crisp).
+  .htmlLat('lat')
+  .htmlLng('lng')
+  .htmlAltitude(0.056) // just above the raised selected country (0.05)
+  .htmlElement((d) => capitalPin(d.name))
+  .htmlElementVisibilityModifier((el, visible) => el.classList.toggle('behind', !visible))
+  .htmlTransitionDuration(0);
+
+function capitalPin(name) {
+  const el = document.createElement('div');
+  el.className = 'capital-pin';
+  el.setAttribute('aria-hidden', 'true'); // the panel already names the capital
+  const dot = document.createElement('span');
+  dot.className = 'capital-dot';
+  const label = document.createElement('span');
+  label.className = 'capital-label';
+  label.textContent = name;
+  el.append(dot, label);
+  return el;
+}
+
+function showCapitalPin(c) {
+  const has = c && c.capital && c.capital_latitude != null && c.capital_longitude != null;
+  globe.htmlElementsData(has ? [{ lat: c.capital_latitude, lng: c.capital_longitude, name: c.capital }] : []);
+}
+
+// Day/night shading (on by default; off for the Night theme and while colouring by a metric).
+const nightShade = createNightShade(globe);
+let dayNight = savedDayNight();
+function updateNightShade() {
+  nightShade.setVisible(dayNight && !metric && !theme.noShade);
+}
 
 globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
-// ---------------------------------------------------------------- theme menu
-const themeBtn = $('#theme-btn');
-const themeMenu = $('#theme-menu');
-themeMenu.innerHTML = Object.entries(THEMES)
-  .map(
-    ([id, t]) => `<button role="menuitemradio" data-theme="${id}" aria-checked="false">
-      <span class="swatch" aria-hidden="true">${t.swatch.map((c) => `<i style="background:${c}"></i>`).join('')}</span>
-      <span>${t.label}</span></button>`,
-  )
-  .join('');
-
-function setThemeMenu(open) {
-  themeMenu.hidden = !open;
-  themeBtn.setAttribute('aria-expanded', String(open));
-  if (open) themeMenu.querySelector('[aria-checked="true"]')?.focus();
+// ---------------------------------------------------------------- top-bar menus (theme, colour by)
+/** A small radio menu under an icon button: click, arrow keys, Esc, tap outside to close. */
+function makeMenu(btn, menu, itemsHtml, onPick) {
+  menu.innerHTML = itemsHtml;
+  const setOpen = (open) => {
+    menu.hidden = !open;
+    btn.setAttribute('aria-expanded', String(open));
+    if (open) (menu.querySelector('[aria-checked="true"]') ?? menu.querySelector('[data-id]'))?.focus();
+  };
+  btn.addEventListener('click', () => setOpen(menu.hidden));
+  menu.addEventListener('click', (e) => {
+    const item = e.target.closest('[data-id]');
+    if (!item) return;
+    onPick(item.dataset.id);
+    setOpen(false);
+    btn.focus();
+  });
+  menu.addEventListener('keydown', (e) => {
+    const items = [...menu.querySelectorAll('[data-id]')];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+    } else if (e.key === 'Escape') {
+      e.stopPropagation(); // don't also close the country panel
+      setOpen(false);
+      btn.focus();
+    }
+  });
+  document.addEventListener('pointerdown', (e) => {
+    if (!menu.hidden && !btn.parentElement.contains(e.target)) setOpen(false);
+  });
 }
-themeBtn.addEventListener('click', () => setThemeMenu(themeMenu.hidden));
-themeMenu.addEventListener('click', (e) => {
-  const id = e.target.closest('[data-theme]')?.dataset.theme;
-  if (!id) return;
-  applyTheme(id);
-  saveTheme(id);
-  setThemeMenu(false);
-  themeBtn.focus();
-});
-themeMenu.addEventListener('keydown', (e) => {
-  const items = [...themeMenu.querySelectorAll('[data-theme]')];
-  const i = items.indexOf(document.activeElement);
-  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-    e.preventDefault();
-    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
-  } else if (e.key === 'Escape') {
-    e.stopPropagation(); // don't also close the country panel
-    setThemeMenu(false);
-    themeBtn.focus();
-  }
-});
-document.addEventListener('pointerdown', (e) => {
-  if (!themeMenu.hidden && !e.target.closest('.theme-wrap')) setThemeMenu(false);
-});
+
+const swatch = (colors) => `<span class="swatch" aria-hidden="true">${colors.map((c) => `<i style="background:${c}"></i>`).join('')}</span>`;
+
+makeMenu(
+  $('#theme-btn'),
+  $('#theme-menu'),
+  Object.entries(THEMES)
+    .map(([id, t]) => `<button role="menuitemradio" data-id="${id}" aria-checked="false">${swatch(t.swatch)}<span>${t.label}</span></button>`)
+    .join('') +
+    `<hr><button role="menuitemcheckbox" data-id="__daynight" aria-checked="${dayNight}"><span class="swatch" aria-hidden="true"><i style="background:#f4c95d"></i><i style="background:#0b1220"></i></span><span>Day &amp; night</span></button>`,
+  (id) => {
+    if (id === '__daynight') {
+      dayNight = !dayNight;
+      saveDayNight(dayNight);
+      $('#theme-menu [data-id="__daynight"]').setAttribute('aria-checked', String(dayNight));
+      updateNightShade();
+      return;
+    }
+    applyTheme(id);
+    saveTheme(id);
+  },
+);
+
+makeMenu(
+  $('#metric-btn'),
+  $('#metric-menu'),
+  `<button role="menuitemradio" data-id="" aria-checked="true">${swatch(['#e2725b', '#6fa8dc', '#6cc28b'])}<span>Theme colours</span></button>` +
+    Object.entries(METRICS)
+      .map(([id, m]) => `<button role="menuitemradio" data-id="${id}" aria-checked="false">${swatch(['#184f95', '#3987e5', '#cde2fb'])}<span>${m.label}</span></button>`)
+      .join(''),
+  (id) => {
+    setMetric(id || null);
+    saveMetric(id || null);
+  },
+);
 
 const controls = globe.controls();
 controls.autoRotate = true;
@@ -229,39 +301,81 @@ function setGlow(intensity) {
   })();
 }
 
-/** Apply a globe theme: surface, imagery, atmosphere and country styling. */
-function applyTheme(id) {
-  theme = THEMES[id];
+/** Apply the globe surface: the theme's, or a neutral one while a metric colours the countries. */
+function applySurface() {
+  const s = metric
+    ? { ocean: METRIC_SURFACE, background: METRIC_SURFACE.background, atmosphere: theme.atmosphere, image: null, glow: 0 }
+    : theme;
   const material = globe.globeMaterial();
   // three-globe sets material.color to null once a texture loads; recreate it when needed.
-  if (material.color) material.color.set(theme.ocean.color);
-  else material.color = new Color(theme.ocean.color);
-  material.emissive.set(theme.ocean.emissive);
-  if (!theme.image && material.map) {
+  if (material.color) material.color.set(s.ocean.color);
+  else material.color = new Color(s.ocean.color);
+  material.emissive.set(s.ocean.emissive);
+  if (!s.image && material.map) {
     // three-globe doesn't remove the old texture when the image is cleared; do it here.
     material.map.dispose();
     material.map = null;
   }
   material.needsUpdate = true;
   globe
-    .backgroundColor(theme.background)
-    .atmosphereColor(theme.atmosphere)
-    .globeImageUrl(theme.image) // textures load only when a theme that uses one is picked
+    .backgroundColor(s.background)
+    .atmosphereColor(s.atmosphere)
+    .globeImageUrl(s.image) // textures load only when a theme that uses one is picked
     .polygonStrokeColor(globe.polygonStrokeColor())
     .polygonSideColor(globe.polygonSideColor());
-  setGlow(theme.glow ?? 0);
+  setGlow(s.glow ?? 0);
+  updateNightShade();
   refreshLayers();
-  document.documentElement.dataset.globeTheme = id;
-  for (const item of document.querySelectorAll('#theme-menu [data-theme]')) {
-    item.setAttribute('aria-checked', String(item.dataset.theme === id));
+}
+
+function markChecked(menuSel, id) {
+  for (const item of document.querySelectorAll(`${menuSel} [role="menuitemradio"][data-id]`)) {
+    item.setAttribute('aria-checked', String(item.dataset.id === (id ?? '')));
   }
+}
+
+/** Apply a globe theme: surface, imagery, atmosphere and country styling. */
+function applyTheme(id) {
+  theme = THEMES[id];
+  applySurface();
+  document.documentElement.dataset.globeTheme = id;
+  markChecked('#theme-menu', id);
+}
+
+/** Colour countries by a metric (null = back to theme colours). */
+function setMetric(id) {
+  metric = id && METRICS[id] ? id : null;
+  const values = state.countries.map((c) => c[metric]).filter((v) => v != null);
+  breaks = metric ? quantileBreaks(values) : [];
+  applySurface();
+  markChecked('#metric-menu', metric);
+  const box = $('#legend');
+  box.hidden = !metric;
+  box.innerHTML = metric ? legend(metric, breaks, values.length) : '';
+  $('#metric-btn').classList.toggle('active', Boolean(metric));
+}
+
+function metricCap(d) {
+  if (d.iso3 && d.iso3 === state.selected) return GOLD;
+  const color = colorFor(d.country?.[metric], breaks);
+  return d === state.hovered && color !== NO_DATA ? lightenHex(color) : color;
+}
+
+function lightenHex(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const mix = (c) => Math.round(c + (255 - c) * 0.3);
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
 }
 
 function tooltip(c) {
   if (!c) return '';
   const esc = (t) => String(t ?? '').replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+  const m = metric && METRICS[metric];
+  const detail = m
+    ? `${m.label}: ${c[metric] != null ? `${m.fmt(c[metric])} ${m.unit === 'US$' ? '' : m.unit}`.trim() : 'no data'}`
+    : c.capital;
   return `<div class="globe-tip">${flag(c.iso2)}<span class="globe-tip-text"><b>${esc(c.name)}</b>${
-    c.capital ? `<small>${esc(c.capital)}</small>` : ''
+    detail ? `<small>${esc(detail)}</small>` : ''
   }</span></div>`;
 }
 
@@ -285,6 +399,7 @@ async function select(iso3, { fly = true, view = 'facts' } = {}) {
   controls.autoRotate = false;
 
   if (changed) {
+    showCapitalPin(summary);
     refreshLayers();
     globe.ringsData([summary]);
     if (fly) flyTo(summary);
@@ -336,6 +451,7 @@ async function fillAir(iso3) {
 }
 
 function deselect() {
+  showCapitalPin(null);
   state.selected = null;
   globe.ringsData([]);
   refreshLayers();
@@ -441,6 +557,32 @@ $('#sheet-body').addEventListener('click', (e) => {
 });
 
 $('#close').addEventListener('click', deselect);
+
+// Share: a /c/ISO3[/view] link, whose server page carries this country's link-preview tags.
+function toast(text) {
+  const el = $('#toast');
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => (el.hidden = true), 2200);
+}
+$('#share').addEventListener('click', async () => {
+  const iso3 = state.selected;
+  if (!iso3) return;
+  const suffix = state.view === 'facts' ? '' : `/${state.view}`;
+  const url = `${location.origin}/c/${iso3}${suffix}`;
+  const name = state.byIso3.get(iso3)?.name ?? iso3;
+  try {
+    if (navigator.share && matchMedia('(pointer: coarse)').matches) {
+      await navigator.share({ title: `${name} · All Around the World`, url });
+      return;
+    }
+    await navigator.clipboard.writeText(url);
+    toast('Link copied');
+  } catch (err) {
+    if (err?.name !== 'AbortError') toast(url); // clipboard blocked: show the link instead
+  }
+});
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && !sheet.hidden) deselect();
 });
@@ -612,6 +754,7 @@ async function boot() {
 
   const dots = countries.filter((c) => !drawn.has(c.iso3) && c.latitude != null);
   globe.polygonsData(state.polygons).pointsData(dots);
+  setMetric(savedMetric()); // needs the country list for its class breaks
 
   $('#loading').remove();
   globe.pointOfView({ lat: 20, lng: 78, altitude: isPhone() ? 3.2 : 2.4 });

@@ -262,3 +262,15 @@ def test_air_uses_capital_then_country_centre(monkeypatch):
     assert abs(calls[-1]["latitude"] - 28.62) < 0.1
     iot = app_module._fetch_air("IOT")  # Diego Garcia isn't geocoded -> country centre
     assert iot["location"]["kind"] == "country centre"
+
+
+def test_share_page_has_country_preview_and_redirect(client):
+    res = client.get("/c/IND/health")
+    assert res.status_code == 200
+    body = res.text
+    assert "<title>India: health &amp; air quality</title>" in body
+    assert 'property="og:url" content="https://worldfly.vercel.app/c/IND/health"' in body
+    assert 'http-equiv="refresh" content="0; url=/#/IND/health"' in body
+    assert "<script" not in body  # CSP: no inline scripts
+    assert client.get("/c/zzz").status_code == 404
+    assert "/#/FRA\"" in client.get("/c/fra/bogus-view").text  # unknown view -> facts

@@ -232,6 +232,13 @@ def main() -> None:
     out = out.merge(caps, on="iso3", how="left", validate="one_to_one")
     print(f"Capital coordinates for {int(out['capital_latitude'].notna().sum())} of {len(out)} countries")
 
+    # Flat copies of two health indicators, for colouring the globe by metric.
+    def latest(code):
+        return out["health"].apply(lambda hs: next((h["value"] for h in hs if h["code"] == code), None)).astype("float64")
+
+    out["life_expectancy"] = latest("SP.DYN.LE00.IN").round(1)
+    out["fertility_rate"] = latest("SP.DYN.TFRT.IN").round(2)
+
     # GDP: World Bank (newer, with a year) where available; the original CSV otherwise.
     out = out.merge(load_gdp(), on="iso3", how="left", validate="one_to_one")
     out["gdp_series"] = out["gdp_series"].apply(lambda v: v if isinstance(v, list) else [])

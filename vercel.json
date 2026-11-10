@@ -16,6 +16,10 @@
       "destination": "/api/index"
     },
     {
+      "source": "/c/(.*)",
+      "destination": "/api/index"
+    },
+    {
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }

@@ -10,7 +10,7 @@ export default defineConfig({
   },
   server: {
     host: true, // expose on LAN so you can test on your phone
-    proxy: { '/api': 'http://127.0.0.1:8000' },
+    proxy: { '/api': 'http://127.0.0.1:8000', '/c/': 'http://127.0.0.1:8000' },
   },
   build: {
     chunkSizeWarningLimit: 2500,

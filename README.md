@@ -63,6 +63,9 @@ Deploy env vars: `APP_CONTACT` (URL/email for the outbound User-Agent — Wikime
 policy asks for one), `ENABLE_DOCS=1` to expose `/docs`. Behind a reverse proxy, add
 `--proxy-headers --forwarded-allow-ips=<proxy ip>` so rate limiting sees real client IPs.
 
+Share links (per-country link previews): `/c/IND`, `/c/IND/health`, … — the server page carries that
+country's preview tags and forwards to the app view. Set `PUBLIC_SITE_URL` if the site isn't worldfly.vercel.app.
+
 Deep links: `/#/IND` (facts), `/#/IND/health`, `/#/IND/news` (headlines), `/#/IND/wiki` (Wikipedia article).
 
 ## Notes

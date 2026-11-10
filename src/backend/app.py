@@ -12,6 +12,7 @@ Environment:
 
 from __future__ import annotations
 
+import html
 import json
 import math
 import os
@@ -25,7 +26,7 @@ import requests
 import wikipediaapi
 from fastapi import FastAPI, HTTPException, Response
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 from .security import SecurityMiddleware, TokenBucketLimiter
@@ -38,6 +39,9 @@ DIST = ROOT / "src" / "frontend" / "dist"
 SUMMARY_FIELDS = [
     "iso3", "iso2", "numeric_code", "name", "capital",
     "region", "subregion", "latitude", "longitude", "population", "area_sq_km",
+    "capital_latitude", "capital_longitude",
+    # Metrics the globe can be coloured by.
+    "life_expectancy", "gdp_per_capita_usd", "median_age", "population_density", "fertility_rate",
 ]
 
 
@@ -69,8 +73,8 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs else None,
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-# Per IP: bursts of 40, then 20/min sustained, on /wiki and /news only.
-# (Opening a country prefetches both, so that's ~10 countries/min sustained.)
+# Per IP on upstream-backed routes (wiki, news, air): bursts of 40, then 20/min.
+# Opening a country prefetches news + wiki, so that's ~10 countries/min sustained.
 app.add_middleware(SecurityMiddleware, limiter=TokenBucketLimiter(per_minute=20, burst=40))
 
 
@@ -292,6 +296,69 @@ def get_country_air(iso3: str, response: Response):
     payload = _upstream_get(AIR_CACHE, _country_or_404(iso3)["iso3"])
     response.headers["Cache-Control"] = CACHE_AIR
     return payload
+
+
+# ---------------------------------------------------------------- share links with per-country previews
+# /c/IND, /c/IND/health ... : link-preview crawlers read the tags below; people are sent on to the
+# app view (/#/IND/health) by a meta refresh (no inline script, so the CSP stays strict).
+SITE_URL = os.environ.get("PUBLIC_SITE_URL", "https://worldfly.vercel.app").rstrip("/")
+SHARE_VIEWS = {"facts": "", "health": "/health", "news": "/news", "wiki": "/wiki"}
+_compact = lambda n: (  # noqa: E731 - tiny formatter
+    f"{n / 1e12:.1f}T" if n >= 1e12 else f"{n / 1e9:.1f}B" if n >= 1e9 else f"{n / 1e6:.1f}M" if n >= 1e6 else f"{n:,.0f}"
+)
+
+
+def _share_text(c: dict, view: str) -> tuple[str, str]:
+    name = c["name"]
+    bits = []
+    if c.get("capital"):
+        bits.append(f"Capital {c['capital']}")
+    if c.get("population"):
+        bits.append(f"{_compact(c['population'])} people")
+    if c.get("life_expectancy"):
+        bits.append(f"life expectancy {c['life_expectancy']:.1f} years")
+    if c.get("gdp_usd"):
+        bits.append(f"GDP ${_compact(c['gdp_usd'])}")
+    facts = " · ".join(bits)
+    if view == "health":
+        return f"{name}: health & air quality", f"Life expectancy, healthcare and live air quality for {name}. {facts}."
+    if view == "news":
+        return f"{name}: latest news", f"The latest headlines about {name}, on an interactive 3D globe. {facts}."
+    if view == "wiki":
+        return f"{name} on Wikipedia", f"Read about {name} without leaving the globe. {facts}."
+    return f"{name} · All Around the World", f"{facts}. Explore {name} on an interactive 3D globe."
+
+
+@app.get("/c/{iso3}", include_in_schema=False)
+@app.get("/c/{iso3}/{view}", include_in_schema=False)
+def share_page(iso3: str, view: str = "facts"):
+    c = _country_or_404(iso3)
+    view = view if view in SHARE_VIEWS else "facts"
+    title, desc = _share_text(c, view)
+    url = f"{SITE_URL}/c/{c['iso3']}{SHARE_VIEWS[view]}"
+    app_url = f"/#/{c['iso3']}{SHARE_VIEWS[view]}"
+    e = html.escape
+    page = f"""<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{e(title)}</title>
+<meta name="description" content="{e(desc)}">
+<link rel="canonical" href="{e(url)}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="All Around the World">
+<meta property="og:title" content="{e(title)}">
+<meta property="og:description" content="{e(desc)}">
+<meta property="og:url" content="{e(url)}">
+<meta property="og:image" content="{e(SITE_URL)}/og.jpg">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{e(title)}">
+<meta name="twitter:description" content="{e(desc)}">
+<meta name="twitter:image" content="{e(SITE_URL)}/og.jpg">
+<meta http-equiv="refresh" content="0; url={e(app_url)}">
+<style>body{{background:#070b14;color:#e8edf7;font:16px system-ui;display:grid;place-items:center;height:100vh;margin:0}}a{{color:#ffd166}}</style>
+</head><body><p>Opening <a href="{e(app_url)}">{e(c['name'])}</a>…</p></body></html>"""
+    return HTMLResponse(page, headers={"Cache-Control": CACHE_STATIC})
 
 
 if DIST.exists():

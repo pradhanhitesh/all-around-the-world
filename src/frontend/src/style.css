@@ -489,3 +489,47 @@ h2.section { display: flex; align-items: center; gap: 6px; font-size: 13px; colo
 .chart-note { margin: 4px 0 0; font-size: 11.5px; color: var(--muted); }
 .tc-label { transition: opacity 0.15s; }
 .trend-chart.hovering .tc-label { opacity: 0.15; }
+
+/* ---------- Globe theme menu ---------- */
+.theme-wrap { position: relative; flex: none; }
+#theme-menu {
+  position: absolute;
+  top: 48px;
+  left: 0;
+  z-index: 20;
+  min-width: 180px;
+  padding: 6px;
+  border-radius: 14px;
+  background: var(--panel-solid);
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+#theme-menu[hidden] { display: none; }
+#theme-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+  outline: none;
+}
+#theme-menu button:hover, #theme-menu button:focus-visible { background: rgba(255, 255, 255, 0.07); }
+#theme-menu button[aria-checked="true"] { color: var(--accent); }
+#theme-menu button[aria-checked="true"]::after { content: "✓"; margin-left: auto; }
+.swatch { display: inline-flex; flex: none; }
+.swatch i {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  margin-left: -5px;
+  box-shadow: 0 0 0 2px var(--panel-solid);
+}
+.swatch i:first-child { margin-left: 0; }

@@ -1,4 +1,5 @@
 import Globe from 'globe.gl';
+import { Color } from 'three';
 import { inject as injectAnalytics } from '@vercel/analytics';
 import { feature } from 'topojson-client';
 import worldTopo from 'world-atlas/countries-110m.json';
@@ -6,20 +7,13 @@ import { renderFacts, renderWiki, renderNews, renderLoading, renderError } from 
 import { flag, icon } from './icons.js';
 import { renderHealth } from './health.js';
 import { handleChartPointer } from './chart.js';
+import { THEMES, savedTheme, saveTheme } from './themes.js';
 
 // Atlas features without an ISO numeric id -> country they belong to (by UN recognition).
 const NAMELESS_FEATURE_MAP = { Kosovo: 'XKX', 'N. Cyprus': 'CYP', Somaliland: 'SOM' };
 
-const REGION_COLORS = {
-  Africa: '#e4a35a',
-  Americas: '#6cc28b',
-  Asia: '#e2725b',
-  Europe: '#6fa8dc',
-  Oceania: '#b48ad6',
-  Polar: '#cfd8e3',
-};
-const DEFAULT_COLOR = '#9aa5b5';
-const SELECTED_COLOR = '#ffd166';
+// Active globe theme (see themes.js); remembered per visitor.
+let theme = THEMES[savedTheme()];
 
 const $ = (sel) => document.querySelector(sel);
 
@@ -117,19 +111,17 @@ function prefetchOthers(iso3, current) {
 
 // ---------------------------------------------------------------- globe
 const globe = new Globe($('#globe'), { animateIn: true })
-  .backgroundColor('#070b14')
   .showAtmosphere(true)
-  .atmosphereColor('#4f8fff')
   .atmosphereAltitude(0.18)
   .polygonAltitude((d) => (d.iso3 === state.selected ? 0.05 : d === state.hovered ? 0.02 : 0.008))
-  .polygonCapColor((d) => capColor(d))
-  .polygonSideColor(() => 'rgba(0, 0, 0, 0.25)')
-  .polygonStrokeColor(() => 'rgba(7, 11, 20, 0.6)')
+  .polygonCapColor((d) => theme.cap(d.country?.region, shapeState(d)))
+  .polygonSideColor((d) => theme.side(shapeState(d)))
+  .polygonStrokeColor(() => theme.stroke)
   .polygonLabel((d) => tooltip(d.country))
   .polygonsTransitionDuration(250)
   .onPolygonHover((d) => {
     state.hovered = d && d.country ? d : null;
-    globe.polygonAltitude(globe.polygonAltitude()); // re-evaluate accessor
+    globe.polygonAltitude(globe.polygonAltitude()).polygonCapColor(globe.polygonCapColor()); // re-evaluate accessors
     $('#globe').style.cursor = state.hovered ? 'pointer' : 'grab';
   })
   .onPolygonClick((d) => d.country && select(d.iso3))
@@ -138,7 +130,7 @@ const globe = new Globe($('#globe'), { animateIn: true })
   .pointLng('longitude')
   .pointAltitude((d) => (d.iso3 === state.selected ? 0.06 : 0.012))
   .pointRadius((d) => (d.iso3 === state.selected ? 0.9 : 0.55))
-  .pointColor((d) => (d.iso3 === state.selected ? SELECTED_COLOR : REGION_COLORS[d.region] ?? DEFAULT_COLOR))
+  .pointColor((d) => theme.point(d.region, { selected: d.iso3 === state.selected }))
   .pointLabel((d) => tooltip(d))
   .pointsMerge(false)
   .onPointClick((d) => select(d.iso3))
@@ -152,9 +144,48 @@ const globe = new Globe($('#globe'), { animateIn: true })
   .ringRepeatPeriod(1100)
   .onGlobeClick(() => {}); // keep panel open on ocean taps
 
-globe.globeMaterial().color.set('#0d2240');
-globe.globeMaterial().emissive.set('#06101f');
 globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+// ---------------------------------------------------------------- theme menu
+const themeBtn = $('#theme-btn');
+const themeMenu = $('#theme-menu');
+themeMenu.innerHTML = Object.entries(THEMES)
+  .map(
+    ([id, t]) => `<button role="menuitemradio" data-theme="${id}" aria-checked="false">
+      <span class="swatch" aria-hidden="true">${t.swatch.map((c) => `<i style="background:${c}"></i>`).join('')}</span>
+      <span>${t.label}</span></button>`,
+  )
+  .join('');
+
+function setThemeMenu(open) {
+  themeMenu.hidden = !open;
+  themeBtn.setAttribute('aria-expanded', String(open));
+  if (open) themeMenu.querySelector('[aria-checked="true"]')?.focus();
+}
+themeBtn.addEventListener('click', () => setThemeMenu(themeMenu.hidden));
+themeMenu.addEventListener('click', (e) => {
+  const id = e.target.closest('[data-theme]')?.dataset.theme;
+  if (!id) return;
+  applyTheme(id);
+  saveTheme(id);
+  setThemeMenu(false);
+  themeBtn.focus();
+});
+themeMenu.addEventListener('keydown', (e) => {
+  const items = [...themeMenu.querySelectorAll('[data-theme]')];
+  const i = items.indexOf(document.activeElement);
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+  } else if (e.key === 'Escape') {
+    e.stopPropagation(); // don't also close the country panel
+    setThemeMenu(false);
+    themeBtn.focus();
+  }
+});
+document.addEventListener('pointerdown', (e) => {
+  if (!themeMenu.hidden && !e.target.closest('.theme-wrap')) setThemeMenu(false);
+});
 
 const controls = globe.controls();
 controls.autoRotate = true;
@@ -163,17 +194,63 @@ controls.enableDamping = true;
 controls.minDistance = 130;
 controls.maxDistance = 600;
 
-function capColor(d) {
-  if (!d.country) return 'rgba(120, 130, 145, 0.35)';
-  if (d.iso3 === state.selected) return SELECTED_COLOR;
-  const base = REGION_COLORS[d.country.region] ?? DEFAULT_COLOR;
-  return d === state.hovered ? lighten(base) : base;
+function shapeState(d) {
+  return { known: Boolean(d.country), selected: d.iso3 === state.selected, hovered: d === state.hovered };
 }
 
-function lighten(hex) {
-  const n = parseInt(hex.slice(1), 16);
-  const mix = (c) => Math.round(c + (255 - c) * 0.35);
-  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+/** Make the surface texture self-lit (night lights). The texture loads asynchronously, so wait for it. */
+let glowToken = 0;
+function setGlow(intensity) {
+  const material = globe.globeMaterial();
+  const token = ++glowToken;
+  if (!intensity) {
+    material.emissiveMap = null;
+    material.emissiveIntensity = 1;
+    material.needsUpdate = true;
+    return;
+  }
+  const url = theme.image;
+  const started = performance.now();
+  (function wait() {
+    if (token !== glowToken) return; // theme changed meanwhile
+    const tex = material.map;
+    if (tex?.image && (tex.image.currentSrc || tex.image.src || '').includes(url)) {
+      material.emissiveMap = tex;
+      material.emissive.set('#ffffff');
+      material.emissiveIntensity = intensity;
+      material.needsUpdate = true;
+    } else if (performance.now() - started < 15000) {
+      requestAnimationFrame(wait);
+    }
+  })();
+}
+
+/** Apply a globe theme: surface, imagery, atmosphere and country styling. */
+function applyTheme(id) {
+  theme = THEMES[id];
+  const material = globe.globeMaterial();
+  // three-globe sets material.color to null once a texture loads; recreate it when needed.
+  if (material.color) material.color.set(theme.ocean.color);
+  else material.color = new Color(theme.ocean.color);
+  material.emissive.set(theme.ocean.emissive);
+  if (!theme.image && material.map) {
+    // three-globe doesn't remove the old texture when the image is cleared; do it here.
+    material.map.dispose();
+    material.map = null;
+  }
+  material.needsUpdate = true;
+  globe
+    .backgroundColor(theme.background)
+    .atmosphereColor(theme.atmosphere)
+    .globeImageUrl(theme.image) // textures load only when a theme that uses one is picked
+    .polygonStrokeColor(globe.polygonStrokeColor())
+    .polygonSideColor(globe.polygonSideColor());
+  setGlow(theme.glow ?? 0);
+  refreshLayers();
+  document.documentElement.dataset.globeTheme = id;
+  for (const item of document.querySelectorAll('#theme-menu [data-theme]')) {
+    item.setAttribute('aria-checked', String(item.dataset.theme === id));
+  }
 }
 
 function tooltip(c) {
@@ -246,7 +323,10 @@ function deselect() {
 
 function refreshLayers() {
   // Re-trigger accessors so colours/altitudes update.
-  globe.polygonCapColor(globe.polygonCapColor()).polygonAltitude(globe.polygonAltitude());
+  globe
+    .polygonCapColor(globe.polygonCapColor())
+    .polygonSideColor(globe.polygonSideColor())
+    .polygonAltitude(globe.polygonAltitude());
   globe.pointColor(globe.pointColor()).pointAltitude(globe.pointAltitude()).pointRadius(globe.pointRadius());
 }
 
@@ -510,6 +590,9 @@ async function boot() {
   globe.pointOfView({ lat: 20, lng: 78, altitude: isPhone() ? 3.2 : 2.4 });
   fromHash();
 }
+
+// Apply the visitor's saved globe theme (after every helper above is defined).
+applyTheme(savedTheme());
 
 boot().catch((err) => {
   $('#loading').textContent = `Failed to load data: ${err.message}. Is the API running on :8000?`;

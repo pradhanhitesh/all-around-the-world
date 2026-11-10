@@ -1,0 +1,2 @@
+NASA Blue Marble / Black Marble imagery (public domain), via the three-globe examples
+(https://github.com/vasturiano/three-globe/tree/master/example/img), resized to 2048x1024.

@@ -11,7 +11,7 @@ import time
 
 # Only endpoints that can trigger third-party calls are rate limited; the rest
 # are served from memory and are cheap.
-LIMITED_PATH = re.compile(r"^/api/countries/[^/]+/(wiki|news)$")
+LIMITED_PATH = re.compile(r"^/api/countries/[^/]+/(wiki|news|air)$")
 
 CSP = "; ".join(
     [

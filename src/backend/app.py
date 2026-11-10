@@ -12,6 +12,7 @@ Environment:
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import xml.etree.ElementTree as ET
@@ -81,6 +82,7 @@ app.add_middleware(SecurityMiddleware, limiter=TokenBucketLimiter(per_minute=20,
 CACHE_STATIC = "public, max-age=0, must-revalidate, s-maxage=31536000"
 CACHE_WIKI = "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800"
 CACHE_NEWS = "public, max-age=300, s-maxage=900, stale-while-revalidate=3600"
+CACHE_AIR = "public, max-age=600, s-maxage=1800, stale-while-revalidate=1800"
 NO_STORE = {"Cache-Control": "no-store"}  # never cache errors / throttling
 
 
@@ -224,6 +226,71 @@ NEWS_CACHE = UpstreamCache("google-news", _fetch_news, ttl_seconds=NEWS_TTL_SECO
 def get_country_news(iso3: str, response: Response):
     payload = _upstream_get(NEWS_CACHE, _country_or_404(iso3)["iso3"])
     response.headers["Cache-Control"] = CACHE_NEWS
+    return payload
+
+
+# ---------------------------------------------------------------- air quality (Open-Meteo)
+AIR_API = "https://air-quality-api.open-meteo.com/v1/air-quality"
+AIR_CURRENT = [
+    "us_aqi", "european_aqi", "pm2_5", "pm10", "ozone",
+    "nitrogen_dioxide", "sulphur_dioxide", "carbon_monoxide",
+]
+AIR_MAX_BYTES = 256 * 1024
+
+
+def _fetch_air(iso3: str) -> dict:
+    c = COUNTRIES[iso3]
+    # Prefer the capital (where people live); fall back to the country's centre.
+    if c.get("capital_latitude") is not None and c.get("capital_longitude") is not None:
+        lat, lon = c["capital_latitude"], c["capital_longitude"]
+        place = {"name": c["capital"], "kind": "capital"}
+    else:
+        lat, lon = c["latitude"], c["longitude"]
+        place = {"name": c["name"], "kind": "country centre"}
+    with requests.get(
+        AIR_API,
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "current": ",".join(AIR_CURRENT),
+            "hourly": "us_aqi",
+            "past_hours": 12,
+            "forecast_hours": 24,
+            "timezone": "auto",
+        },
+        headers={"User-Agent": USER_AGENT},
+        timeout=8,
+        stream=True,
+    ) as res:
+        res.raise_for_status()
+        body = res.raw.read(AIR_MAX_BYTES + 1, decode_content=True)
+    if len(body) > AIR_MAX_BYTES:
+        raise ValueError("air quality response too large")
+    data = json.loads(body)
+    hourly = data.get("hourly", {})
+    return {
+        "location": {**place, "latitude": round(lat, 3), "longitude": round(lon, 3)},
+        "time": data["current"]["time"],
+        "timezone": data.get("timezone"),
+        "current": {k: data["current"].get(k) for k in AIR_CURRENT},
+        "units": {k: data.get("current_units", {}).get(k) for k in AIR_CURRENT},
+        "hourly": [
+            {"time": t, "us_aqi": v}
+            for t, v in zip(hourly.get("time", []), hourly.get("us_aqi", []))
+            if v is not None
+        ],
+        "attribution": "Air quality: Open-Meteo, CAMS (Copernicus Atmosphere Monitoring Service)",
+    }
+
+
+# Model data updates hourly; 30 min keeps Open-Meteo calls to at most ~250 countries x 48/day.
+AIR_CACHE = UpstreamCache("open-meteo-air", _fetch_air, ttl_seconds=30 * 60)
+
+
+@app.get("/api/countries/{iso3}/air")
+def get_country_air(iso3: str, response: Response):
+    payload = _upstream_get(AIR_CACHE, _country_or_404(iso3)["iso3"])
+    response.headers["Cache-Control"] = CACHE_AIR
     return payload
 
 

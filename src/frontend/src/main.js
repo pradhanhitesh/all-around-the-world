@@ -6,6 +6,7 @@ import worldTopo from 'world-atlas/countries-110m.json';
 import { renderFacts, renderWiki, renderNews, renderLoading, renderError } from './facts.js';
 import { flag, icon } from './icons.js';
 import { renderHealth } from './health.js';
+import { renderAir, renderAirError } from './air.js';
 import { handleChartPointer } from './chart.js';
 import { THEMES, savedTheme, saveTheme } from './themes.js';
 
@@ -64,7 +65,7 @@ const VIEWS = {
     fetch: { cache: 'no-cache' },
   },
   // Health uses the facts record (World Bank data is part of it), so no extra request.
-  health: { label: 'Health', icon: 'heart-pulse', source: 'facts', render: renderHealth },
+  health: { label: 'Health', icon: 'heart-pulse', source: 'facts', render: renderHealth, after: (iso3) => fillAir(iso3) },
   news: {
     label: 'News',
     icon: 'newspaper',
@@ -73,7 +74,10 @@ const VIEWS = {
     ttl: 15 * 60 * 1000, // matches the server-side cache
   },
   wiki: { label: 'Wikipedia', icon: 'book-open', url: (iso3) => `/api/countries/${iso3}/wiki`, render: renderWiki },
+  // Data-only source (no tab): live air quality, shown inside Health. Fetched only when Health opens.
+  air: { hidden: true, url: (iso3) => `/api/countries/${iso3}/air`, ttl: 10 * 60 * 1000 },
 };
+const TAB_VIEWS = Object.keys(VIEWS).filter((v) => !VIEWS[v].hidden);
 
 // Views can share another view's data (health -> facts); cache and fetch by the source view.
 const sourceOf = (view) => VIEWS[view].source ?? view;
@@ -104,7 +108,7 @@ function load(view, iso3) {
 
 /** Warm the other tabs in the background so switching is instant. Errors surface only when opened. */
 function prefetchOthers(iso3, current) {
-  const sources = new Set(Object.keys(VIEWS).map(sourceOf));
+  const sources = new Set(TAB_VIEWS.map(sourceOf));
   sources.delete(sourceOf(current));
   for (const view of sources) load(view, iso3).catch(() => {});
 }
@@ -303,13 +307,31 @@ async function showView(iso3, view) {
 
   const hit = cached(view, iso3);
   if (!sameScreen) openSheet(hit ? VIEWS[view].render(summary, hit) : renderLoading(summary, view), `${view}:${iso3}`);
-  if (hit) return;
+  if (hit) return VIEWS[view].after?.(iso3);
   const stillHere = () => state.selected === iso3 && state.view === view;
   try {
     const data = await load(view, iso3);
-    if (stillHere()) $('#sheet-body').innerHTML = VIEWS[view].render(summary, data);
+    if (!stillHere()) return;
+    $('#sheet-body').innerHTML = VIEWS[view].render(summary, data);
+    VIEWS[view].after?.(iso3);
   } catch (err) {
     if (stillHere()) $('#sheet-body').innerHTML = renderError(summary, view, err.message);
+  }
+}
+
+/** Fill the Health tab's air-quality card (separate, live request; cached 10 min client-side). */
+async function fillAir(iso3) {
+  const card = () => (state.selected === iso3 && state.view === 'health' ? $('#air-card') : null);
+  const hit = cached('air', iso3);
+  if (hit) {
+    if (card()) card().innerHTML = renderAir(hit);
+    return;
+  }
+  try {
+    const data = await load('air', iso3);
+    if (card()) card().innerHTML = renderAir(data);
+  } catch (err) {
+    if (card()) card().innerHTML = renderAirError(err.message);
   }
 }
 
@@ -355,7 +377,7 @@ function openSheet(html, key) {
 
 // Tab bar: Facts · News · Wikipedia
 const tabs = $('#tabs');
-tabs.innerHTML = Object.entries(VIEWS)
+tabs.innerHTML = TAB_VIEWS.map((view) => [view, VIEWS[view]])
   .map(([view, v]) => `<button role="tab" data-view="${view}" aria-selected="false">${icon(v.icon)}<span>${v.label}</span></button>`)
   .join('');
 
@@ -373,7 +395,7 @@ tabs.addEventListener('click', (e) => {
 });
 tabs.addEventListener('keydown', (e) => {
   if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
-  const order = Object.keys(VIEWS);
+  const order = TAB_VIEWS;
   const next = order[(order.indexOf(state.view) + (e.key === 'ArrowRight' ? 1 : -1) + order.length) % order.length];
   showView(state.selected, next);
   tabs.querySelector(`[data-view="${next}"]`).focus();
@@ -407,6 +429,11 @@ $('#sheet-body').addEventListener('pointerleave', (e) => e.target.classList?.con
 
 // "Try again" after a failed load.
 $('#sheet-body').addEventListener('click', (e) => {
+  if (e.target.closest('[data-action="retry-air"]') && state.selected) {
+    $('#air-card').innerHTML = '<p class="muted">Loading air quality…</p>';
+    fillAir(state.selected);
+    return;
+  }
   if (e.target.closest('[data-action="retry"]') && state.selected) {
     $('#sheet-body').dataset.key = '';
     showView(state.selected, state.view);

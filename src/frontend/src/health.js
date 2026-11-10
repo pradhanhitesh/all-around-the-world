@@ -2,6 +2,7 @@
 // life-expectancy trend chart. Data comes with the facts record, so no extra request.
 import { icon, flag } from './icons.js';
 import { trendChart } from './chart.js';
+import { airPlaceholder } from './air.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -66,7 +67,7 @@ export function renderHealth(summary, c) {
   const byCode = Object.fromEntries((c.health ?? []).map((h) => [h.code, h]));
   const head = `<h1>${flag(c.iso2)}${esc(c.name)}</h1>`;
   if (!c.health?.length) {
-    return `<div class="wiki">${head}<p class="muted">The World Bank doesn't publish health indicators for ${esc(c.name)}.</p></div>`;
+    return `<div class="wiki">${head}${airPlaceholder()}<p class="muted">The World Bank doesn't publish health indicators for ${esc(c.name)}.</p></div>`;
   }
 
   const le = byCode['SP.DYN.LE00.IN'];
@@ -93,7 +94,8 @@ export function renderHealth(summary, c) {
 
   return `<div class="wiki">
     ${head}
-    <p class="news-sub">${c.income_group ? `${esc(c.income_group)} economy · ` : ''}latest available year for each figure</p>
+    ${airPlaceholder()}
+    <p class="news-sub">${c.income_group ? `${esc(c.income_group)} economy · ` : ''}World Bank figures, latest available year for each</p>
     ${hero}
     ${groups}
     <p class="data-credit">Source: <a href="https://data.worldbank.org/" target="_blank" rel="noopener">World Bank, World Development Indicators</a>

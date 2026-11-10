@@ -13,10 +13,11 @@ data/raw/worldbank_*.csv      World Bank WDI health + GDP extracts (CC BY 4.0) â
 data/raw/SOURCES.md           data sources and licenses
 data/countries.parquet        single source of truth for the API (generated)
 src/backend/extract_worldbank.py  WDI bulk download -> small health CSVs in data/raw
+src/backend/geocode_capitals.py   capital coordinates (Open-Meteo geocoding) -> data/raw/capital_coords.csv
 src/backend/build_data.py     CSV -> parquet (types, parsed timezones, ranks, derived facts)
 api/index.py                  Vercel serverless entrypoint (re-exports the FastAPI app)
 vercel.json                   Vercel build, rewrites, security + cache headers
-src/backend/app.py            FastAPI: /api/countries, /api/countries/{iso3}, /api/countries/{iso3}/wiki, /api/countries/{iso3}/news, serves built SPA
+src/backend/app.py            FastAPI: /api/countries, /api/countries/{iso3}, /api/countries/{iso3}/wiki, /api/countries/{iso3}/news, /api/countries/{iso3}/air, serves built SPA
 src/backend/upstream.py       cache + single-flight + concurrency cap for Wikipedia / Google News
 src/backend/security.py       per-IP rate limit + security headers (CSP etc.)
 src/frontend/                 Vite + globe.gl SPA

@@ -137,6 +137,7 @@ def client(monkeypatch):
     # Never touch the network in tests.
     monkeypatch.setattr(app_module.NEWS_CACHE, "_fetch", lambda iso3: {"items": [], "iso3": iso3})
     monkeypatch.setattr(app_module.WIKI_CACHE, "_fetch", lambda iso3: {"title": iso3})
+    monkeypatch.setattr(app_module.AIR_CACHE, "_fetch", lambda iso3: {"current": {"us_aqi": 42}, "iso3": iso3})
     return TestClient(app_module.app)
 
 
@@ -221,3 +222,43 @@ def test_vercel_entrypoint_exposes_app():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert mod.app is app_module.app
+
+
+def test_air_endpoint_cached_and_rate_limited(client, monkeypatch):
+    res = client.get("/api/countries/IND/air")
+    assert res.status_code == 200 and res.json()["current"]["us_aqi"] == 42
+    assert "s-maxage=1800" in res.headers["cache-control"]
+    mw = client.app.middleware_stack
+    while not hasattr(mw, "limiter"):
+        mw = mw.app
+    monkeypatch.setattr(mw, "limiter", TokenBucketLimiter(per_minute=1, burst=1))
+    assert [client.get("/api/countries/IND/air").status_code for _ in range(2)] == [200, 429]
+
+
+def test_air_uses_capital_then_country_centre(monkeypatch):
+    calls = []
+
+    class FakeResp:
+        def __init__(self, params):
+            self.params = params
+            self.raw = self
+        def __enter__(self):
+            return self
+        def __exit__(self, *a):
+            return False
+        def raise_for_status(self):
+            pass
+        def read(self, n, decode_content=True):
+            import json
+            return json.dumps({"current": {"time": "2026-01-01T12:00", "us_aqi": 10}, "hourly": {"time": [], "us_aqi": []}}).encode()
+
+    def fake_get(url, params, **kw):
+        calls.append(params)
+        return FakeResp(params)
+
+    monkeypatch.setattr(app_module.requests, "get", fake_get)
+    ind = app_module._fetch_air("IND")
+    assert ind["location"]["kind"] == "capital" and ind["location"]["name"] == "New Delhi"
+    assert abs(calls[-1]["latitude"] - 28.62) < 0.1
+    iot = app_module._fetch_air("IOT")  # Diego Garcia isn't geocoded -> country centre
+    assert iot["location"]["kind"] == "country centre"

@@ -25,6 +25,8 @@ WB_HEALTH_CSV = ROOT / "data" / "raw" / "worldbank_health.csv"
 WB_LIFE_EXP_CSV = ROOT / "data" / "raw" / "worldbank_life_expectancy.csv"
 WB_INCOME_CSV = ROOT / "data" / "raw" / "worldbank_income.csv"
 WB_GDP_CSV = ROOT / "data" / "raw" / "worldbank_gdp.csv"
+# Capital-city coordinates from geocode_capitals.py (Open-Meteo / GeoNames, CC BY 4.0).
+CAPITAL_COORDS_CSV = ROOT / "data" / "raw" / "capital_coords.csv"
 OUT_PARQUET = ROOT / "data" / "countries.parquet"
 
 # Timezones column is a JS-style literal: [{zoneName:'Asia\/Kabul',gmtOffset:16200,...}]
@@ -222,6 +224,13 @@ def main() -> None:
     for col in ("health", "life_expectancy_series"):
         out[col] = out[col].apply(lambda v: v if isinstance(v, list) else [])
     print(f"World Bank health data for {sum(bool(h) for h in out['health'])} of {len(out)} countries")
+
+    # Capital coordinates (for air quality). Missing ones fall back to the country centre in the API.
+    caps = pd.read_csv(CAPITAL_COORDS_CSV, usecols=["iso3", "latitude", "longitude"]).rename(
+        columns={"latitude": "capital_latitude", "longitude": "capital_longitude"}
+    )
+    out = out.merge(caps, on="iso3", how="left", validate="one_to_one")
+    print(f"Capital coordinates for {int(out['capital_latitude'].notna().sum())} of {len(out)} countries")
 
     # GDP: World Bank (newer, with a year) where available; the original CSV otherwise.
     out = out.merge(load_gdp(), on="iso3", how="left", validate="one_to_one")

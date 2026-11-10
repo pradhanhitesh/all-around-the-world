@@ -10,6 +10,7 @@ const usdCompact = new Intl.NumberFormat('en', { style: 'currency', currency: 'U
 const FORMATS = {
   years: { label: (v) => v.toFixed(1), tip: (v) => `${v.toFixed(1)} years` },
   usd: { label: (v) => usdCompact.format(v), tip: (v) => usdCompact.format(v) },
+  aqi: { label: (v) => String(Math.round(v)), tip: (v) => `AQI ${Math.round(v)}` },
 };
 
 const W = 320;
@@ -19,10 +20,12 @@ let gradientId = 0;
 
 /**
  * @param {{year:number, value:number}[]} series  sorted by year
- * @param {{summary:string, format:'years'|'usd', zero?:boolean}} opts
+ * @param {{summary:string, format:'years'|'usd'|'aqi', zero?:boolean, labels?:string[], marker?:number}} opts
  *   zero: start the value axis at 0 (use for magnitudes like GDP).
+ *   labels: display text per point for the x axis and tooltip (default: the year).
+ *   marker: index of a point to mark with a vertical "now" line.
  */
-export function trendChart(series, { summary, format, zero = false }) {
+export function trendChart(series, { summary, format, zero = false, labels, marker }) {
   if (series.length < 2) return '';
   const fmt = FORMATS[format];
   const first = series[0];
@@ -39,22 +42,25 @@ export function trendChart(series, { summary, format, zero = false }) {
   const climbs = series[Math.min(5, series.length - 1)].value >= first.value;
   const firstLabelY = Math.min(climbs ? y(first.value) + 15 : y(first.value) - 8, H - PAD.b - 4);
   const points = series.map((p) => `${p.year}:${p.value}`).join(',');
+  const xText = labels ?? series.map((p) => String(p.year));
+  const now = marker != null && series[marker] ? x(series[marker].year) : null;
   const gid = `trend-fill-${++gradientId}`;
 
-  return `<figure class="trend-chart" data-points="${points}" data-lo="${lo}" data-hi="${hi}" data-format="${format}">
+  return `<figure class="trend-chart" data-points="${points}" data-labels="${esc(xText.join('|'))}" data-lo="${lo}" data-hi="${hi}" data-format="${format}">
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(summary)}">
       <defs><linearGradient id="${gid}" x1="0" x2="0" y1="0" y2="1">
         <stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
       </linearGradient></defs>
       <line class="tc-base" x1="${PAD.l}" x2="${W - PAD.r}" y1="${H - PAD.b}" y2="${H - PAD.b}"/>
       <path d="${area}" fill="url(#${gid})"/>
+      ${now != null ? `<line class="tc-now" x1="${now}" x2="${now}" y1="${PAD.t - 6}" y2="${H - PAD.b}"/><text class="tc-axis" x="${now}" y="${PAD.t - 10}" text-anchor="middle">now</text>` : ''}
       <path class="tc-line" d="${line}"/>
       <circle class="tc-end" cx="${x(first.year)}" cy="${y(first.value)}" r="3"/>
       <circle class="tc-end" cx="${x(last.year)}" cy="${y(last.value)}" r="3"/>
       <text class="tc-label" x="${x(first.year) + 6}" y="${firstLabelY}" text-anchor="start">${esc(fmt.label(first.value))}</text>
       <text class="tc-label" x="${x(last.year)}" y="${y(last.value) - 8}" text-anchor="end">${esc(fmt.label(last.value))}</text>
-      <text class="tc-axis" x="${PAD.l}" y="${H - 5}" text-anchor="start">${first.year}</text>
-      <text class="tc-axis" x="${W - PAD.r}" y="${H - 5}" text-anchor="end">${last.year}</text>
+      <text class="tc-axis" x="${PAD.l}" y="${H - 5}" text-anchor="start">${esc(xText[0])}</text>
+      <text class="tc-axis" x="${W - PAD.r}" y="${H - 5}" text-anchor="end">${esc(xText[xText.length - 1])}</text>
       <g class="tc-hover" visibility="hidden">
         <line class="tc-cross" y1="${PAD.t - 6}" y2="${H - PAD.b}"/>
         <circle class="tc-dot" r="4"/>
@@ -87,7 +93,9 @@ export function handleChartPointer(e) {
   const vx = ((e.clientX - rect.left) / rect.width) * W; // pointer x in viewBox units
   const [y0, y1] = [pts[0][0], pts[pts.length - 1][0]];
   const year = Math.round(y0 + ((vx - PAD.l) / (W - PAD.l - PAD.r)) * (y1 - y0));
-  const [yr, val] = pts.reduce((best, p) => (Math.abs(p[0] - year) < Math.abs(best[0] - year) ? p : best));
+  const idx = pts.reduce((bi, p, i) => (Math.abs(p[0] - year) < Math.abs(pts[bi][0] - year) ? i : bi), 0);
+  const [yr, val] = pts[idx];
+  const label = (fig.dataset.labels || '').split('|')[idx] || yr;
   const cx = PAD.l + ((yr - y0) / (y1 - y0)) * (W - PAD.l - PAD.r);
   const cy = PAD.t + (1 - (val - lo) / (hi - lo)) * (H - PAD.t - PAD.b);
   hover.setAttribute('visibility', 'visible');
@@ -97,7 +105,7 @@ export function handleChartPointer(e) {
   hover.querySelector('.tc-dot').setAttribute('cx', cx);
   hover.querySelector('.tc-dot').setAttribute('cy', cy);
   tip.hidden = false;
-  tip.innerHTML = `<b>${esc(fmt.tip(val))}</b><span>${yr}</span>`;
+  tip.innerHTML = `<b>${esc(fmt.tip(val))}</b><span>${esc(label)}</span>`;
   const px = (cx / W) * rect.width;
   tip.style.left = `${Math.min(Math.max(px, 48), rect.width - 48)}px`;
 }

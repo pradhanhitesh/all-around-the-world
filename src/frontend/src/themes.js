@@ -101,6 +101,24 @@ export const DEFAULT_THEME = 'regions';
 const STORAGE_KEY = 'aatw-globe-theme';
 const DAYNIGHT_KEY = 'aatw-day-night';
 
+const STARS_KEY = 'aatw-stars';
+
+export function savedStars() {
+  try {
+    return localStorage.getItem(STARS_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveStars(on) {
+  try {
+    localStorage.setItem(STARS_KEY, on ? 'on' : 'off');
+  } catch {
+    /* not critical */
+  }
+}
+
 export function savedDayNight() {
   try {
     return localStorage.getItem(DAYNIGHT_KEY) !== 'off';

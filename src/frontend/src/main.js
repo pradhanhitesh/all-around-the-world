@@ -8,7 +8,8 @@ import { flag, icon } from './icons.js';
 import { renderHealth } from './health.js';
 import { renderAir, renderAirError } from './air.js';
 import { handleChartPointer } from './chart.js';
-import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight } from './themes.js';
+import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight, savedStars, saveStars } from './themes.js';
+import { createStarfield } from './stars.js';
 import { createNightShade } from './daynight.js';
 import { METRICS, METRIC_SURFACE, NO_DATA, quantileBreaks, colorFor, legend, savedMetric, saveMetric } from './metrics.js';
 
@@ -194,6 +195,11 @@ function updateNightShade() {
 
 globe.renderer().setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
+// Starfield behind the globe (procedural, no download). On by default; toggle in the theme menu.
+const starfield = createStarfield(globe, { pixelRatio: globe.renderer().getPixelRatio() });
+let stars = savedStars();
+starfield.setVisible(stars);
+
 // ---------------------------------------------------------------- top-bar menus (theme, colour by)
 /** A small radio menu under an icon button: click, arrow keys, Esc, tap outside to close. */
 function makeMenu(btn, menu, itemsHtml, onPick) {
@@ -236,8 +242,16 @@ makeMenu(
   Object.entries(THEMES)
     .map(([id, t]) => `<button role="menuitemradio" data-id="${id}" aria-checked="false">${swatch(t.swatch)}<span>${t.label}</span></button>`)
     .join('') +
-    `<hr><button role="menuitemcheckbox" data-id="__daynight" aria-checked="${dayNight}"><span class="swatch" aria-hidden="true"><i style="background:#f4c95d"></i><i style="background:#0b1220"></i></span><span>Day &amp; night</span></button>`,
+    `<hr><button role="menuitemcheckbox" data-id="__stars" aria-checked="${stars}"><span class="swatch" aria-hidden="true"><i style="background:#ffffff"></i><i style="background:#0b1220"></i></span><span>Stars</span></button>` +
+    `<button role="menuitemcheckbox" data-id="__daynight" aria-checked="${dayNight}"><span class="swatch" aria-hidden="true"><i style="background:#f4c95d"></i><i style="background:#0b1220"></i></span><span>Day &amp; night</span></button>`,
   (id) => {
+    if (id === '__stars') {
+      stars = !stars;
+      saveStars(stars);
+      $('#theme-menu [data-id="__stars"]').setAttribute('aria-checked', String(stars));
+      starfield.setVisible(stars);
+      return;
+    }
     if (id === '__daynight') {
       dayNight = !dayNight;
       saveDayNight(dayNight);

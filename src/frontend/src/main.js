@@ -10,6 +10,7 @@ import { renderAir, renderAirError } from './air.js';
 import { handleChartPointer } from './chart.js';
 import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight, savedStars, saveStars } from './themes.js';
 import { createStarfield } from './stars.js';
+import { createTilt, tiltSupported } from './motion.js';
 import { createNightShade } from './daynight.js';
 import { METRICS, METRIC_SURFACE, NO_DATA, quantileBreaks, colorFor, legend, savedMetric, saveMetric } from './metrics.js';
 
@@ -280,6 +281,30 @@ makeMenu(
 const controls = globe.controls();
 controls.autoRotate = true;
 controls.autoRotateSpeed = 0.35;
+
+// Tilt to explore (phones/tablets): the Motion button only shows where it can work.
+const tilt = createTilt(globe, controls);
+const motionBtn = $('#motion-btn');
+motionBtn.hidden = !tiltSupported();
+motionBtn.addEventListener('click', async () => {
+  if (tilt.enabled) {
+    tilt.disable();
+    motionBtn.setAttribute('aria-pressed', 'false');
+    motionBtn.classList.remove('active');
+    return;
+  }
+  // enable() must run inside this tap so iOS can show its permission prompt.
+  const ok = await tilt.enable((message) => {
+    motionBtn.setAttribute('aria-pressed', 'false');
+    motionBtn.classList.remove('active');
+    toast(message);
+  });
+  if (ok) {
+    motionBtn.setAttribute('aria-pressed', 'true');
+    motionBtn.classList.add('active');
+    toast('Tilt your device to turn the globe');
+  }
+});
 controls.enableDamping = true;
 controls.minDistance = 130;
 controls.maxDistance = 600;
@@ -490,6 +515,7 @@ function flyTo(c) {
   // lower to place the country in the visible strip above it. Laptop: the globe already
   // shrinks beside the panel, so no nudge is needed.
   if (!isDesktop()) lat -= altitude * (isPhone() ? 13 : 11);
+  if (tilt.enabled) tilt.holdFor(1300); // let the flight finish, then tilt from there
   globe.pointOfView({ lat, lng, altitude }, 1200);
 }
 

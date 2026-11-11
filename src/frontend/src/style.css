@@ -650,3 +650,42 @@ h2.section { display: flex; align-items: center; gap: 6px; font-size: 13px; colo
   white-space: nowrap;
 }
 .globe-menu hr { border: 0; border-top: 1px solid var(--line); margin: 6px 4px; }
+
+/* ---------- Collapsible tool bar ---------- */
+#tools-toggle .when-open { display: none; }
+#tools-toggle[aria-expanded="true"] .when-open { display: block; }
+#tools-toggle[aria-expanded="true"] .when-closed { display: none; }
+#tools-toggle[aria-expanded="true"] { color: var(--text); background: rgba(255, 255, 255, 0.1); }
+.tools { display: flex; gap: 8px; align-items: center; min-width: 0; }
+.tools > * {
+  transition: opacity 0.2s var(--ease), transform 0.22s var(--ease), visibility 0s;
+}
+.tools:not(.open) { pointer-events: none; }
+.tools:not(.open) > * {
+  opacity: 0;
+  transform: translateX(-14px) scale(0.9);
+  visibility: hidden;
+  transition: opacity 0.14s ease-in, transform 0.14s ease-in, visibility 0s 0.14s;
+}
+/* Slide out one after another. */
+.tools.open > :nth-child(2) { transition-delay: 30ms; }
+.tools.open > :nth-child(3) { transition-delay: 60ms; }
+.tools.open > :nth-child(4) { transition-delay: 90ms; }
+@media (prefers-reduced-motion: reduce) {
+  .tools > *, .tools:not(.open) > * { transition: none; transform: none; }
+}
+/* While searching, the field takes the row; the other tools step aside. */
+.tools:has(.search.open) > :not(.search) { display: none; }
+
+/* ---------- Top-bar buttons: solid and dark so they read over any globe colour ---------- */
+.topbar .icon-btn,
+.topbar .search:not(.open) #search-toggle {
+  background: rgba(10, 15, 26, 0.9);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1), 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+.topbar .icon-btn:hover,
+.topbar .search:not(.open) #search-toggle:hover { background: rgba(24, 33, 52, 0.95); }
+.topbar .search.open #search-toggle { background: transparent; box-shadow: none; }
+.topbar #tools-toggle[aria-expanded="true"] { background: rgba(30, 41, 64, 0.95); }
+.topbar .icon-btn.active { color: var(--accent); box-shadow: inset 0 0 0 1px rgba(255, 209, 102, 0.45), 0 2px 10px rgba(0, 0, 0, 0.35); }

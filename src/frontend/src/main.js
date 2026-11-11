@@ -645,9 +645,47 @@ input.addEventListener('blur', () => {
 document.addEventListener('keydown', (e) => {
   if (e.key === '/' && document.activeElement !== input) {
     e.preventDefault();
+    setTools(true); // the search lives in the collapsible tool bar
     openSearch();
   }
 });
+
+// ---------------------------------------------------------------- collapsible tool bar
+// One toggle reveals search, random, theme and colour-by. Collapsed tools are `inert`, so they
+// can't be focused or read out while hidden. The open/closed state is remembered per visitor.
+const toolsToggle = $('#tools-toggle');
+const tools = $('#tools');
+const TOOLS_KEY = 'aatw-tools-open';
+
+function setTools(open, { save = true } = {}) {
+  tools.classList.toggle('open', open);
+  tools.inert = !open;
+  toolsToggle.setAttribute('aria-expanded', String(open));
+  toolsToggle.setAttribute('aria-label', open ? 'Hide tools' : 'Show tools: search, random, theme, colour by');
+  if (!open) {
+    closeSearch();
+    for (const menu of tools.querySelectorAll('.globe-menu')) menu.hidden = true;
+    for (const btn of tools.querySelectorAll('[aria-haspopup="menu"]')) btn.setAttribute('aria-expanded', 'false');
+  }
+  if (save) {
+    try {
+      localStorage.setItem(TOOLS_KEY, open ? 'open' : 'closed');
+    } catch {
+      /* not critical */
+    }
+  }
+}
+toolsToggle.addEventListener('click', () => setTools(!tools.classList.contains('open')));
+setTools(
+  (() => {
+    try {
+      return localStorage.getItem(TOOLS_KEY) === 'open';
+    } catch {
+      return false;
+    }
+  })(),
+  { save: false },
+);
 let matches = [];
 let active = 0;
 

@@ -8,9 +8,11 @@ import { flag, icon } from './icons.js';
 import { renderHealth } from './health.js';
 import { renderAir, renderAirError } from './air.js';
 import { handleChartPointer } from './chart.js';
-import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight, savedStars, saveStars } from './themes.js';
+import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight, savedStars, saveStars, savedWeatherFx, saveWeatherFx } from './themes.js';
 import { createStarfield } from './stars.js';
 import { createTilt, tiltSupported } from './motion.js';
+import { describe as describeWeather, renderWeather, renderWeatherError } from './weather.js';
+import { createWeatherFx } from './effects.js';
 import { createNightShade } from './daynight.js';
 import { METRICS, METRIC_SURFACE, NO_DATA, quantileBreaks, colorFor, legend, savedMetric, saveMetric } from './metrics.js';
 
@@ -71,6 +73,7 @@ const VIEWS = {
     // Always revalidate: facts change only on deploy, and an older build told browsers to
     // keep them for an hour. 'no-cache' ignores any such stale copy (the CDN still answers fast).
     fetch: { cache: 'no-cache' },
+    after: (iso3) => fillWeather(iso3),
   },
   // Health uses the facts record (World Bank data is part of it), so no extra request.
   health: { label: 'Health', icon: 'heart-pulse', source: 'facts', render: renderHealth, after: (iso3) => fillAir(iso3) },
@@ -84,6 +87,8 @@ const VIEWS = {
   wiki: { label: 'Wikipedia', icon: 'book-open', url: (iso3) => `/api/countries/${iso3}/wiki`, render: renderWiki },
   // Data-only source (no tab): live air quality, shown inside Health. Fetched only when Health opens.
   air: { hidden: true, url: (iso3) => `/api/countries/${iso3}/air`, ttl: 10 * 60 * 1000 },
+  // Data-only: current weather at the capital. Drives the Facts card and the globe's weather effects.
+  weather: { hidden: true, url: (iso3) => `/api/countries/${iso3}/weather`, ttl: 10 * 60 * 1000 },
 };
 const TAB_VIEWS = Object.keys(VIEWS).filter((v) => !VIEWS[v].hidden);
 
@@ -243,9 +248,17 @@ makeMenu(
   Object.entries(THEMES)
     .map(([id, t]) => `<button role="menuitemradio" data-id="${id}" aria-checked="false">${swatch(t.swatch)}<span>${t.label}</span></button>`)
     .join('') +
-    `<hr><button role="menuitemcheckbox" data-id="__stars" aria-checked="${stars}"><span class="swatch" aria-hidden="true"><i style="background:#ffffff"></i><i style="background:#0b1220"></i></span><span>Stars</span></button>` +
+    `<hr><button role="menuitemcheckbox" data-id="__weather" aria-checked="${savedWeatherFx()}"><span class="swatch" aria-hidden="true"><i style="background:#7fa6d9"></i><i style="background:#d6e4ff"></i></span><span>Rain &amp; snow</span></button>` +
+    `<button role="menuitemcheckbox" data-id="__stars" aria-checked="${stars}"><span class="swatch" aria-hidden="true"><i style="background:#ffffff"></i><i style="background:#0b1220"></i></span><span>Stars</span></button>` +
     `<button role="menuitemcheckbox" data-id="__daynight" aria-checked="${dayNight}"><span class="swatch" aria-hidden="true"><i style="background:#f4c95d"></i><i style="background:#0b1220"></i></span><span>Day &amp; night</span></button>`,
   (id) => {
+    if (id === '__weather') {
+      weatherFxOn = !weatherFxOn;
+      saveWeatherFx(weatherFxOn);
+      $('#theme-menu [data-id="__weather"]').setAttribute('aria-checked', String(weatherFxOn));
+      weatherFx.setEnabled(weatherFxOn);
+      return;
+    }
     if (id === '__stars') {
       stars = !stars;
       saveStars(stars);
@@ -439,6 +452,8 @@ async function select(iso3, { fly = true, view = 'facts' } = {}) {
 
   if (changed) {
     showCapitalPin(summary);
+    clearWeather();
+    fillWeather(iso3); // weather effects follow the selection whichever tab opens
     refreshLayers();
     globe.ringsData([summary]);
     if (fly) flyTo(summary);
@@ -474,6 +489,34 @@ async function showView(iso3, view) {
 }
 
 /** Fill the Health tab's air-quality card (separate, live request; cached 10 min client-side). */
+// ---------------------------------------------------------------- weather (card + globe effects)
+// Rain/snow animation only: clear, cloudy and fog leave the globe as it is.
+const weatherFx = createWeatherFx($('#weather-fx'));
+let weatherFxOn = savedWeatherFx();
+weatherFx.setEnabled(weatherFxOn);
+
+function clearWeather() {
+  weatherFx.clear();
+}
+
+/** Load the selected country's weather, show it in Facts (if open) and on the globe. */
+async function fillWeather(iso3) {
+  const card = () => (state.selected === iso3 && state.view === 'facts' ? $('#weather-card') : null);
+  const show = (w) => {
+    if (state.selected !== iso3) return;
+    const d = describeWeather(w.current?.weather_code, w.current?.is_day);
+    weatherFx.set(d.kind, { heavy: Boolean(d.heavy) });
+    if (card()) card().innerHTML = renderWeather(w);
+  };
+  const hit = cached('weather', iso3);
+  if (hit) return show(hit);
+  try {
+    show(await load('weather', iso3));
+  } catch (err) {
+    if (card()) card().innerHTML = renderWeatherError(err.message);
+  }
+}
+
 async function fillAir(iso3) {
   const card = () => (state.selected === iso3 && state.view === 'health' ? $('#air-card') : null);
   const hit = cached('air', iso3);
@@ -491,6 +534,7 @@ async function fillAir(iso3) {
 
 function deselect() {
   showCapitalPin(null);
+  clearWeather();
   state.selected = null;
   globe.ringsData([]);
   refreshLayers();
@@ -585,6 +629,11 @@ $('#sheet-body').addEventListener('pointerleave', (e) => e.target.classList?.con
 
 // "Try again" after a failed load.
 $('#sheet-body').addEventListener('click', (e) => {
+  if (e.target.closest('[data-action="retry-weather"]') && state.selected) {
+    $('#weather-card').innerHTML = '<p class="muted">Checking the weather…</p>';
+    fillWeather(state.selected);
+    return;
+  }
   if (e.target.closest('[data-action="retry-air"]') && state.selected) {
     $('#air-card').innerHTML = '<p class="muted">Loading air quality…</p>';
     fillAir(state.selected);

@@ -101,6 +101,24 @@ export const DEFAULT_THEME = 'regions';
 const STORAGE_KEY = 'aatw-globe-theme';
 const DAYNIGHT_KEY = 'aatw-day-night';
 
+const WEATHER_FX_KEY = 'aatw-weather-fx';
+
+export function savedWeatherFx() {
+  try {
+    return localStorage.getItem(WEATHER_FX_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+export function saveWeatherFx(on) {
+  try {
+    localStorage.setItem(WEATHER_FX_KEY, on ? 'on' : 'off');
+  } catch {
+    /* not critical */
+  }
+}
+
 const STARS_KEY = 'aatw-stars';
 
 export function savedStars() {

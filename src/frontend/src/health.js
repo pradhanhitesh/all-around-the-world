@@ -63,11 +63,67 @@ function lifeChart(c) {
   });
 }
 
+// ---------------------------------------------------------------- happiness (World Happiness Report)
+
+const FACTOR_LABELS = {
+  gdp: 'GDP per person',
+  social_support: 'Social support',
+  healthy_life: 'Healthy life expectancy',
+  freedom: 'Freedom of choice',
+  generosity: 'Generosity',
+  corruption: 'Low perceived corruption',
+  dystopia_residual: 'Baseline + unexplained',
+};
+
+// One fixed scale for every country and factor (largest value in the data is ~2.9), so bars
+// compare across countries; a share-of-own-score scale made low scorers' bars look longer.
+const FACTOR_SCALE = 3;
+
+function happiness(c) {
+  if (c.happiness_score == null) return '';
+  const f = c.happiness_factors ?? {};
+  const total = c.happiness_score;
+  // How much each factor adds, as WHR splits the score (against a hypothetical "Dystopia" with the
+  // world's lowest values; the last bar is that baseline plus what the six factors don't explain).
+  const bars = Object.entries(FACTOR_LABELS)
+    .filter(([k]) => f[k] != null)
+    .map(([k, label]) => {
+      const v = f[k];
+      const width = Math.max(0, Math.min(100, (v / FACTOR_SCALE) * 100));
+      return `<div class="hf-row"><span class="hf-label">${esc(label)}</span>
+        <span class="hf-bar"><i style="width:${width.toFixed(1)}%"></i></span><span class="hf-val">${v.toFixed(2)}</span></div>`;
+    })
+    .join('');
+  const series = c.happiness_series ?? [];
+  const chart =
+    series.length > 1
+      ? trendChart(series, {
+          format: 'score10',
+          summary: `Happiness in ${c.name} went from ${series[0].value.toFixed(2)} in ${series[0].year} to ${series.at(-1).value.toFixed(2)} in ${series.at(-1).year}, out of 10.`,
+        })
+      : '';
+  const stale = c.happiness_year < 2023 ? ` (latest survey ${c.happiness_year})` : '';
+  return `<section class="le-hero happy-card">
+      <div class="le-head">
+        <div>
+          <div class="k">${icon('smile')}Happiness · life evaluation</div>
+          <div class="le-value">${total.toFixed(2)} <span>/ 10</span></div>
+          <div class="r">#${c.happiness_rank} of ${c.happiness_count} countries · ${c.happiness_year}${stale}
+            · likely range ${c.happiness_lower.toFixed(2)}–${c.happiness_upper.toFixed(2)}</div>
+        </div>
+      </div>
+      ${chart}
+      ${bars ? `<h3 class="air-sub happy-sub">What explains the score</h3><div class="hf">${bars}</div>` : ''}
+      <p class="data-credit">People's own rating of their lives (0 = worst possible, 10 = best), 3-year average.
+        Source: <a href="https://worldhappiness.report/" target="_blank" rel="noopener">World Happiness Report 2026</a> (Gallup World Poll).</p>
+    </section>`;
+}
+
 export function renderHealth(summary, c) {
   const byCode = Object.fromEntries((c.health ?? []).map((h) => [h.code, h]));
   const head = `<h1>${flag(c.iso2)}${esc(c.name)}</h1>`;
   if (!c.health?.length) {
-    return `<div class="wiki">${head}${airPlaceholder()}<p class="muted">The World Bank doesn't publish health indicators for ${esc(c.name)}.</p></div>`;
+    return `<div class="wiki">${head}${airPlaceholder()}${happiness(c)}<p class="muted">The World Bank doesn't publish health indicators for ${esc(c.name)}.</p></div>`;
   }
 
   const le = byCode['SP.DYN.LE00.IN'];
@@ -95,6 +151,7 @@ export function renderHealth(summary, c) {
   return `<div class="wiki">
     ${head}
     ${airPlaceholder()}
+    ${happiness(c)}
     <p class="news-sub">${c.income_group ? `${esc(c.income_group)} economy · ` : ''}World Bank figures, latest available year for each</p>
     ${hero}
     ${groups}

@@ -16,6 +16,7 @@ export const METRICS = {
   population_density: { label: 'Population density', unit: 'people per km²', fmt: (v) => compact.format(v), source: 'countries dataset' },
   population: { label: 'Population', unit: 'people', fmt: (v) => compact.format(v), source: 'countries dataset' },
   fertility_rate: { label: 'Fertility rate', unit: 'births per woman', fmt: (v) => nf(2).format(v), source: 'World Bank' },
+  happiness_score: { label: 'Happiness', unit: 'life evaluation, 0–10', fmt: (v) => nf(2).format(v), source: 'World Happiness Report 2026' },
 };
 
 // Sequential blue (reference palette steps 600 -> 100): dark/low to light/high on a dark surface.

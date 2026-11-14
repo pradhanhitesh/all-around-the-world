@@ -78,3 +78,13 @@ def test_gdp_falls_back_to_original_csv(countries):
     # The World Bank has no Taiwan figures; GDP comes from countries.csv, without a year.
     twn = countries["TWN"]
     assert twn["gdp_usd"] > 0 and twn["gdp_year"] is None and twn["gdp_series"] == []
+
+
+def test_parquet_has_every_column_the_api_lists():
+    # Guards the deploy: code that lists a column must ship with a parquet that has it
+    # (a missing column once took the whole API down on Vercel).
+    from src.backend.app import SUMMARY_FIELDS
+
+    columns = set(pq.read_schema(OUT_PARQUET).names)
+    missing = [f for f in SUMMARY_FIELDS if f not in columns]
+    assert not missing, f"Rebuild and commit data/countries.parquet; missing columns: {missing}"

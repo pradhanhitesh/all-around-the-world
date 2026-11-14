@@ -5,6 +5,7 @@ import {
   MapPin, Maximize, Phone, Sparkles, TrendingUp, User, Users, Wallet, X, ChevronDown, Info, Newspaper,
   Languages, HandHeart, Hourglass, Car,
   Baby, Stethoscope, Bed, Syringe, Droplet, Cigarette, HeartPulse, Wind,
+  Smile, Sun, Moon, Cloud, CloudSun, CloudMoon, CloudFog, CloudDrizzle, CloudRain, CloudSnow, CloudLightning, Droplets,
 } from 'lucide-static';
 
 const ICONS = {
@@ -16,6 +17,9 @@ const ICONS = {
   languages: Languages, 'hand-heart': HandHeart, hourglass: Hourglass, car: Car,
   baby: Baby, stethoscope: Stethoscope, bed: Bed, syringe: Syringe, droplet: Droplet,
   cigarette: Cigarette, 'heart-pulse': HeartPulse, wind: Wind,
+  smile: Smile, sun: Sun, moon: Moon, cloud: Cloud, 'cloud-sun': CloudSun, 'cloud-moon': CloudMoon, 'cloud-fog': CloudFog,
+  'cloud-drizzle': CloudDrizzle, 'cloud-rain': CloudRain, 'cloud-snow': CloudSnow,
+  'cloud-lightning': CloudLightning, droplets: Droplets,
 };
 
 /** Returns an inline <svg> string for a Lucide icon, sized via CSS (.ico). */

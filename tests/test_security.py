@@ -138,6 +138,7 @@ def client(monkeypatch):
     monkeypatch.setattr(app_module.NEWS_CACHE, "_fetch", lambda iso3: {"items": [], "iso3": iso3})
     monkeypatch.setattr(app_module.WIKI_CACHE, "_fetch", lambda iso3: {"title": iso3})
     monkeypatch.setattr(app_module.AIR_CACHE, "_fetch", lambda iso3: {"current": {"us_aqi": 42}, "iso3": iso3})
+    monkeypatch.setattr(app_module.WEATHER_CACHE, "_fetch", lambda iso3: {"current": {"weather_code": 61}, "iso3": iso3})
     return TestClient(app_module.app)
 
 
@@ -274,3 +275,15 @@ def test_share_page_has_country_preview_and_redirect(client):
     assert "<script" not in body  # CSP: no inline scripts
     assert client.get("/c/zzz").status_code == 404
     assert "/#/FRA\"" in client.get("/c/fra/bogus-view").text  # unknown view -> facts
+
+
+def test_weather_endpoint_cached_and_rate_limited(client, monkeypatch):
+    res = client.get("/api/countries/GBR/weather")
+    assert res.status_code == 200 and res.json()["current"]["weather_code"] == 61
+    assert "s-maxage=900" in res.headers["cache-control"]
+    assert client.get("/api/countries/ZZZ/weather").status_code == 404
+    mw = client.app.middleware_stack
+    while not hasattr(mw, "limiter"):
+        mw = mw.app
+    monkeypatch.setattr(mw, "limiter", TokenBucketLimiter(per_minute=1, burst=1))
+    assert [client.get("/api/countries/GBR/weather").status_code for _ in range(2)] == [200, 429]

@@ -11,6 +11,7 @@ const FORMATS = {
   years: { label: (v) => v.toFixed(1), tip: (v) => `${v.toFixed(1)} years` },
   usd: { label: (v) => usdCompact.format(v), tip: (v) => usdCompact.format(v) },
   aqi: { label: (v) => String(Math.round(v)), tip: (v) => `AQI ${Math.round(v)}` },
+  score10: { label: (v) => v.toFixed(2), tip: (v) => `${v.toFixed(2)} / 10` },
 };
 
 const W = 320;

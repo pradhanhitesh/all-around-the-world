@@ -1,6 +1,7 @@
 // Renders the facts panel for one country (full record from /api/countries/:iso3).
 import { icon, flag } from './icons.js';
 import { trendChart } from './chart.js';
+import { weatherPlaceholder } from './weather.js';
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
@@ -36,6 +37,11 @@ function highlights(c) {
   if (c.median_age_rank && c.median_age_rank <= 10) out.push(`One of the youngest populations (median age ${c.median_age})`);
   if (c.median_age_rank_oldest && c.median_age_rank_oldest <= 10) out.push(`One of the oldest populations (median age ${c.median_age})`);
   if (c.un_member === false) out.push('Not a UN member state');
+  // Happiness rank: only for recent survey years, so we don't headline a stale ranking.
+  if (c.happiness_rank && c.happiness_year >= 2023) {
+    if (c.happiness_rank <= 10) out.push(`Among the 10 happiest countries (#${c.happiness_rank} of ${c.happiness_count})`);
+    else if (c.happiness_rank > c.happiness_count - 10) out.push(`Among the 10 least happy countries (#${c.happiness_rank} of ${c.happiness_count})`);
+  }
   const offsets = new Set((c.timezones ?? []).map((z) => z.gmt_offset));
   if (offsets.size > 2) out.push(`Spans ${offsets.size} UTC offsets`);
   if (c.hemisphere) out.push(`Lies in the ${c.hemisphere} hemispheres`);
@@ -89,6 +95,8 @@ export function renderFacts(c) {
     </div>
 
     <ul class="highlights">${highlights(c).map((h) => `<li>${icon('sparkles')}<span>${esc(h)}</span></li>`).join('')}</ul>
+
+    ${weatherPlaceholder()}
 
     <div class="grid">
       ${stat('users', 'Population', pop != null ? compact.format(pop) : '—', pop != null ? `${nf.format(pop)} · ${rankText(c.population_rank, total)}` : '')}

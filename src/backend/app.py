@@ -59,7 +59,8 @@ def load_countries() -> dict[str, dict]:
 
 COUNTRIES = load_countries()
 SUMMARY = sorted(
-    ({k: c[k] for k in SUMMARY_FIELDS} for c in COUNTRIES.values()),
+    # .get: a column missing from an older parquet leaves that field empty instead of crashing startup.
+    ({k: c.get(k) for k in SUMMARY_FIELDS} for c in COUNTRIES.values()),
     key=lambda c: c["name"],
 )
 

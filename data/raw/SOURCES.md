@@ -9,6 +9,7 @@ The CSV files listed here are **not committed** (`data/raw/*.csv` is gitignored)
 | `worldbank_health.csv`, `worldbank_life_expectancy.csv`, `worldbank_income.csv` | [World Bank, World Development Indicators](https://data.worldbank.org/) (Health topic, updated 2026-10-08), extracted by `src/backend/extract_worldbank.py` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — attribution required |
 | `worldbank_gdp.csv` | [World Bank, World Development Indicators](https://data.worldbank.org/indicator/NY.GDP.MKTP.CD) — GDP (current US$), 1960–2025, extracted by `src/backend/extract_worldbank.py` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
 | `capital_coords.csv` | Capital-city coordinates from the [Open-Meteo Geocoding API](https://open-meteo.com/en/docs/geocoding-api) (GeoNames), made by `src/backend/geocode_capitals.py` | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) |
+| `whr_happiness.csv` | [World Happiness Report 2026](https://worldhappiness.report/), Figure 2.1 data (life evaluations 2011–2025, Gallup World Poll), extracted by `src/backend/extract_whr.py` from `WHR26_Data_Figure_2.1.xlsx` | Cite the World Happiness Report; check its terms before redistributing the raw file |
 | `simplemaps_countries.csv` | [SimpleMaps Basic World Countries Database](https://simplemaps.com/data/countries) v1.1 | [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) — attribution required |
 
 From SimpleMaps we use only fields the main dataset lacks: primary language, largest religion,

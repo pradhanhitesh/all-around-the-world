@@ -42,6 +42,7 @@ SUMMARY_FIELDS = [
     "capital_latitude", "capital_longitude",
     # Metrics the globe can be coloured by.
     "life_expectancy", "gdp_per_capita_usd", "median_age", "population_density", "fertility_rate",
+    "happiness_score",
 ]
 
 

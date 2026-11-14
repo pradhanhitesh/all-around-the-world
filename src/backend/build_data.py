@@ -25,6 +25,18 @@ WB_HEALTH_CSV = ROOT / "data" / "raw" / "worldbank_health.csv"
 WB_LIFE_EXP_CSV = ROOT / "data" / "raw" / "worldbank_life_expectancy.csv"
 WB_INCOME_CSV = ROOT / "data" / "raw" / "worldbank_income.csv"
 WB_GDP_CSV = ROOT / "data" / "raw" / "worldbank_gdp.csv"
+# World Happiness Report 2026, Figure 2.1 (from extract_whr.py).
+WHR_CSV = ROOT / "data" / "raw" / "whr_happiness.csv"
+# WHR country names that differ from ours. "North Cyprus" and "Somaliland Region" have their own
+# survey results and aren't separate entries here, so they're left out rather than merged.
+WHR_ALIASES = {
+    "Czechia": "CZE", "Côte d’Ivoire": "CIV", "DR Congo": "COD", "Gambia": "GMB",
+    "Hong Kong SAR of China": "HKG", "Lao PDR": "LAO", "Republic of Korea": "KOR",
+    "Republic of Moldova": "MDA", "Russian Federation": "RUS", "State of Palestine": "PSE",
+    "Swaziland": "SWZ", "Taiwan Province of China": "TWN", "Türkiye": "TUR", "Viet Nam": "VNM",
+}
+WHR_SKIP = {"North Cyprus", "Somaliland Region"}
+WHR_FACTORS = ["gdp", "social_support", "healthy_life", "freedom", "generosity", "corruption", "dystopia_residual"]
 # Capital-city coordinates from geocode_capitals.py (Open-Meteo / GeoNames, CC BY 4.0).
 CAPITAL_COORDS_CSV = ROOT / "data" / "raw" / "capital_coords.csv"
 OUT_PARQUET = ROOT / "data" / "countries.parquet"
@@ -182,6 +194,48 @@ def load_gdp() -> pd.DataFrame:
     return latest.join(series).reset_index()
 
 
+def load_whr(countries: pd.DataFrame) -> pd.DataFrame:
+    """Latest happiness score/rank/interval/factors per ISO3, plus the score trend."""
+    import unicodedata
+
+    def norm(s):
+        return unicodedata.normalize("NFKD", str(s)).encode("ascii", "ignore").decode().lower().strip()
+
+    lookup = {}
+    for iso3, name, title in zip(countries["iso3"], countries["name"], countries["wikipedia_title"]):
+        for n in (name, title):
+            if isinstance(n, str):
+                lookup[norm(n)] = iso3
+    whr = pd.read_csv(WHR_CSV)
+    whr = whr[~whr["country"].isin(WHR_SKIP)]
+    whr["iso3"] = whr["country"].map(lambda n: WHR_ALIASES.get(n) or lookup.get(norm(n)))
+    unmatched = sorted(whr.loc[whr["iso3"].isna(), "country"].unique())
+    if unmatched:
+        raise SystemExit(f"Unmatched World Happiness Report names (add to WHR_ALIASES): {unmatched}")
+
+    counts = whr.groupby("year")["rank"].count()
+    latest = whr.sort_values("year").groupby("iso3").last()
+    out = pd.DataFrame(
+        {
+            "happiness_score": latest["score"].round(3),
+            "happiness_rank": latest["rank"].astype("Int16"),
+            "happiness_count": latest["year"].map(counts).astype("Int16"),
+            "happiness_year": latest["year"].astype("Int16"),
+            "happiness_lower": latest["lower"].round(3),
+            "happiness_upper": latest["upper"].round(3),
+        }
+    )
+    out["happiness_factors"] = [
+        {f: (None if pd.isna(row[f]) else round(float(row[f]), 3)) for f in WHR_FACTORS} for _, row in latest.iterrows()
+    ]
+    out["happiness_series"] = (
+        whr.sort_values("year")
+        .groupby("iso3")[["year", "score"]]
+        .apply(lambda g: [{"year": int(y), "value": round(float(v), 3)} for y, v in zip(g["year"], g["score"])])
+    )
+    return out.rename_axis("iso3").reset_index()
+
+
 def main() -> None:
     df = pd.read_csv(RAW_CSV, dtype=str, keep_default_na=False)
     df = df.apply(lambda s: s.str.strip())
@@ -278,6 +332,12 @@ def main() -> None:
     out["wikipedia_title"] = [titles.get(q, n) for q, n in zip(out["wikidata_id"], out["name"])]
     out["news_query"] = [news_query(i, t) for i, t in zip(out["iso3"], out["wikipedia_title"])]
 
+    # World Happiness Report: latest life evaluation, rank and what explains it, plus the trend.
+    out = out.merge(load_whr(out), on="iso3", how="left", validate="one_to_one")
+    out["happiness_series"] = out["happiness_series"].apply(lambda v: v if isinstance(v, list) else [])
+    out["happiness_factors"] = out["happiness_factors"].apply(lambda v: v if isinstance(v, dict) else None)
+    print(f"Happiness data for {int(out['happiness_score'].notna().sum())} of {len(out)} countries")
+
     tz_type = pa.list_(
         pa.struct(
             [
@@ -306,6 +366,8 @@ def main() -> None:
         "health": health_type,
         "life_expectancy_series": series_type,
         "gdp_series": series_type,
+        "happiness_series": series_type,
+        "happiness_factors": pa.struct([(f, pa.float64()) for f in WHR_FACTORS]),
     }
     table = pa.Table.from_pandas(out.drop(columns=list(nested)), preserve_index=False)
     for name, typ in nested.items():

@@ -73,9 +73,9 @@ app = FastAPI(
     openapi_url="/openapi.json" if _docs else None,
 )
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-# Per IP on upstream-backed routes (wiki, news, air): bursts of 40, then 20/min.
-# Opening a country prefetches news + wiki, so that's ~10 countries/min sustained.
-app.add_middleware(SecurityMiddleware, limiter=TokenBucketLimiter(per_minute=20, burst=40))
+# Per IP on upstream-backed routes (wiki, news, air, weather): bursts of 60, then 30/min.
+# Opening a country fetches news + wiki + weather, so that's ~10 countries/min sustained.
+app.add_middleware(SecurityMiddleware, limiter=TokenBucketLimiter(per_minute=30, burst=60))
 
 
 # CDN caching (Vercel or any CDN honouring s-maxage). Browsers keep a short copy;
@@ -242,15 +242,15 @@ AIR_CURRENT = [
 AIR_MAX_BYTES = 256 * 1024
 
 
-def _fetch_air(iso3: str) -> dict:
-    c = COUNTRIES[iso3]
-    # Prefer the capital (where people live); fall back to the country's centre.
+def _place(c: dict) -> tuple[float, float, dict]:
+    """Where to sample live conditions: the capital (where people live), else the country's centre."""
     if c.get("capital_latitude") is not None and c.get("capital_longitude") is not None:
-        lat, lon = c["capital_latitude"], c["capital_longitude"]
-        place = {"name": c["capital"], "kind": "capital"}
-    else:
-        lat, lon = c["latitude"], c["longitude"]
-        place = {"name": c["name"], "kind": "country centre"}
+        return c["capital_latitude"], c["capital_longitude"], {"name": c["capital"], "kind": "capital"}
+    return c["latitude"], c["longitude"], {"name": c["name"], "kind": "country centre"}
+
+
+def _fetch_air(iso3: str) -> dict:
+    lat, lon, place = _place(COUNTRIES[iso3])
     with requests.get(
         AIR_API,
         params={
@@ -295,6 +295,57 @@ AIR_CACHE = UpstreamCache("open-meteo-air", _fetch_air, ttl_seconds=30 * 60)
 def get_country_air(iso3: str, response: Response):
     payload = _upstream_get(AIR_CACHE, _country_or_404(iso3)["iso3"])
     response.headers["Cache-Control"] = CACHE_AIR
+    return payload
+
+
+# ---------------------------------------------------------------- current weather (Open-Meteo)
+WEATHER_API = "https://api.open-meteo.com/v1/forecast"
+WEATHER_FIELDS = [
+    "temperature_2m", "apparent_temperature", "relative_humidity_2m", "weather_code",
+    "is_day", "cloud_cover", "precipitation", "wind_speed_10m",
+]
+WEATHER_MAX_BYTES = 64 * 1024
+CACHE_WEATHER = "public, max-age=300, s-maxage=900, stale-while-revalidate=900"
+
+
+def _fetch_weather(iso3: str) -> dict:
+    lat, lon, place = _place(COUNTRIES[iso3])
+    with requests.get(
+        WEATHER_API,
+        params={
+            "latitude": lat,
+            "longitude": lon,
+            "current": ",".join(WEATHER_FIELDS),
+            "timezone": "auto",
+        },
+        headers={"User-Agent": USER_AGENT},
+        timeout=8,
+        stream=True,
+    ) as res:
+        res.raise_for_status()
+        body = res.raw.read(WEATHER_MAX_BYTES + 1, decode_content=True)
+    if len(body) > WEATHER_MAX_BYTES:
+        raise ValueError("weather response too large")
+    data = json.loads(body)
+    current = data["current"]
+    return {
+        "location": {**place, "latitude": round(lat, 3), "longitude": round(lon, 3)},
+        "time": current["time"],
+        "timezone": data.get("timezone"),
+        "current": {k: current.get(k) for k in WEATHER_FIELDS},
+        "units": {k: data.get("current_units", {}).get(k) for k in WEATHER_FIELDS},
+        "attribution": "Weather: Open-Meteo",
+    }
+
+
+# The model updates every 15 min; caching for 15 min keeps calls to <= ~250 countries x 96/day.
+WEATHER_CACHE = UpstreamCache("open-meteo-weather", _fetch_weather, ttl_seconds=15 * 60)
+
+
+@app.get("/api/countries/{iso3}/weather")
+def get_country_weather(iso3: str, response: Response):
+    payload = _upstream_get(WEATHER_CACHE, _country_or_404(iso3)["iso3"])
+    response.headers["Cache-Control"] = CACHE_WEATHER
     return payload
 
 

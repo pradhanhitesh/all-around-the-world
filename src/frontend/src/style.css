@@ -712,3 +712,4 @@ h2.section { display: flex; align-items: center; gap: 6px; font-size: 13px; colo
 .hf-val { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; }
 .tc-tip[hidden] { display: none; } /* the hover tooltip's display:flex was overriding [hidden] */
 .happy-note { margin: 10px 0 0; font-size: 12.5px; }
+.legend-ramp.legend-ramp-5 { grid-template-columns: repeat(5, 1fr); }

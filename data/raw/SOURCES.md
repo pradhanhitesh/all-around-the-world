@@ -23,3 +23,10 @@ GDP comes from the World Bank where available and falls back to `countries.csv` 
 Live air quality (not stored) comes from the [Open-Meteo Air Quality API](https://open-meteo.com/en/docs/air-quality-api)
 (CAMS model, CC BY 4.0), queried at the capital's coordinates. Open-Meteo's free API is for
 non-commercial use (about 10,000 calls/day); the API caches each country for 30 minutes.
+
+Ocean currents (`src/frontend/public/data/currents.json`, committed) are rebuilt nightly by the
+`Ocean currents` GitHub Action (`.github/workflows/ocean-currents.yml` -> `src/backend/ocean_currents.py`):
+surface current speed/direction from the [Open-Meteo Marine API](https://open-meteo.com/en/docs/marine-weather-api)
+(Météo-France SMOC model, CC BY 4.0) on a 3° grid of ocean points (`data/ocean_mask.json`, made once
+from the globe's land shapes with `--make-mask`), traced into flow lines. Open-Meteo counts each point
+as a call, so requests are throttled (~460/min) and a run takes ~10 minutes.

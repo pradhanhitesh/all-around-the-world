@@ -1,0 +1,44 @@
+# Nightly refresh of the ocean-currents layer: samples surface currents (Open-Meteo Marine API),
+# traces flow lines and commits src/frontend/public/data/currents.json. The push redeploys Vercel.
+name: Ocean currents
+
+on:
+  schedule:
+    - cron: "17 3 * * *" # daily, 03:17 UTC
+  workflow_dispatch: # allow manual runs from the Actions tab
+
+permissions:
+  contents: write # to commit the refreshed data file
+
+concurrency:
+  group: ocean-currents
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30 # a normal run takes ~10 min (requests are throttled for the free API)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install requests
+
+      - name: Build currents layer
+        run: python src/backend/ocean_currents.py
+
+      - name: Commit if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898699+github-actions[bot]@users.noreply.github.com"
+          git add src/frontend/public/data/currents.json
+          if git diff --cached --quiet; then
+            echo "No change in currents data"
+            exit 0
+          fi
+          git commit -m "[data] ocean currents $(date -u +%F)"
+          git push

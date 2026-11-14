@@ -101,6 +101,25 @@ export const DEFAULT_THEME = 'regions';
 const STORAGE_KEY = 'aatw-globe-theme';
 const DAYNIGHT_KEY = 'aatw-day-night';
 
+const CURRENTS_KEY = 'aatw-currents';
+
+/** Ocean currents layer: off unless the visitor turned it on (it's an extra download). */
+export function savedCurrents() {
+  try {
+    return localStorage.getItem(CURRENTS_KEY) === 'on';
+  } catch {
+    return false;
+  }
+}
+
+export function saveCurrents(on) {
+  try {
+    localStorage.setItem(CURRENTS_KEY, on ? 'on' : 'off');
+  } catch {
+    /* not critical */
+  }
+}
+
 const WEATHER_FX_KEY = 'aatw-weather-fx';
 
 export function savedWeatherFx() {

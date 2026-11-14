@@ -15,6 +15,7 @@ data/countries.parquet        single source of truth for the API (generated)
 src/backend/extract_worldbank.py  WDI bulk download -> small health CSVs in data/raw
 src/backend/geocode_capitals.py   capital coordinates (Open-Meteo geocoding) -> data/raw/capital_coords.csv
 src/backend/extract_whr.py    World Happiness Report xlsx -> data/raw/whr_happiness.csv (needs openpyxl, in requirements-dev)
+src/backend/ocean_currents.py  nightly (GitHub Action): Open-Meteo surface currents -> flow lines in public/data/currents.json
 src/backend/build_data.py     CSV -> parquet (types, parsed timezones, ranks, derived facts)
 api/index.py                  Vercel serverless entrypoint (re-exports the FastAPI app)
 vercel.json                   Vercel build, rewrites, security + cache headers

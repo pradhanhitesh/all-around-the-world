@@ -8,11 +8,12 @@ import { flag, icon } from './icons.js';
 import { renderHealth } from './health.js';
 import { renderAir, renderAirError } from './air.js';
 import { handleChartPointer } from './chart.js';
-import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight, savedStars, saveStars, savedWeatherFx, saveWeatherFx } from './themes.js';
+import { THEMES, savedTheme, saveTheme, savedDayNight, saveDayNight, savedStars, saveStars, savedWeatherFx, saveWeatherFx, savedCurrents, saveCurrents } from './themes.js';
 import { createStarfield } from './stars.js';
 import { createTilt, tiltSupported } from './motion.js';
 import { describe as describeWeather, renderWeather, renderWeatherError } from './weather.js';
 import { createWeatherFx } from './effects.js';
+import { loadCurrents, currentColor, setupCurrentsLayer, currentsLegend } from './currents.js';
 import { createNightShade } from './daynight.js';
 import { METRICS, METRIC_SURFACE, NO_DATA, quantileBreaks, colorFor, legend, savedMetric, saveMetric } from './metrics.js';
 
@@ -248,10 +249,18 @@ makeMenu(
   Object.entries(THEMES)
     .map(([id, t]) => `<button role="menuitemradio" data-id="${id}" aria-checked="false">${swatch(t.swatch)}<span>${t.label}</span></button>`)
     .join('') +
-    `<hr><button role="menuitemcheckbox" data-id="__weather" aria-checked="${savedWeatherFx()}"><span class="swatch" aria-hidden="true"><i style="background:#7fa6d9"></i><i style="background:#d6e4ff"></i></span><span>Rain &amp; snow</span></button>` +
+    `<hr><button role="menuitemcheckbox" data-id="__currents" aria-checked="${savedCurrents()}"><span class="swatch" aria-hidden="true"><i style="background:#2f97b3"></i><i style="background:#e3f7fb"></i></span><span>Ocean currents</span></button>` +
+    `<button role="menuitemcheckbox" data-id="__weather" aria-checked="${savedWeatherFx()}"><span class="swatch" aria-hidden="true"><i style="background:#7fa6d9"></i><i style="background:#d6e4ff"></i></span><span>Rain &amp; snow</span></button>` +
     `<button role="menuitemcheckbox" data-id="__stars" aria-checked="${stars}"><span class="swatch" aria-hidden="true"><i style="background:#ffffff"></i><i style="background:#0b1220"></i></span><span>Stars</span></button>` +
     `<button role="menuitemcheckbox" data-id="__daynight" aria-checked="${dayNight}"><span class="swatch" aria-hidden="true"><i style="background:#f4c95d"></i><i style="background:#0b1220"></i></span><span>Day &amp; night</span></button>`,
   (id) => {
+    if (id === '__currents') {
+      currentsOn = !currentsOn;
+      saveCurrents(currentsOn);
+      $('#theme-menu [data-id="__currents"]').setAttribute('aria-checked', String(currentsOn));
+      updateCurrents();
+      return;
+    }
     if (id === '__weather') {
       weatherFxOn = !weatherFxOn;
       saveWeatherFx(weatherFxOn);
@@ -401,10 +410,44 @@ function setMetric(id) {
   breaks = metric ? quantileBreaks(values) : [];
   applySurface();
   markChecked('#metric-menu', metric);
-  const box = $('#legend');
-  box.hidden = !metric;
-  box.innerHTML = metric ? legend(metric, breaks, values.length) : '';
+  metricLegend = metric ? legend(metric, breaks, values.length) : '';
   $('#metric-btn').classList.toggle('active', Boolean(metric));
+  updateCurrents(); // currents hide while a metric colours the globe
+}
+
+// ---------------------------------------------------------------- ocean currents layer
+let metricLegend = '';
+let currentsOn = savedCurrents();
+let currentsData = null;
+setupCurrentsLayer(globe);
+
+/** One legend card: the colour-by metric's if one is on, else the currents', else none. */
+function updateLegend() {
+  const box = $('#legend');
+  const html = metric ? metricLegend : currentsOn && currentsData ? currentsLegend(currentsData) : '';
+  box.hidden = !html;
+  box.innerHTML = html;
+}
+
+async function updateCurrents() {
+  const visible = currentsOn && !metric;
+  if (!visible) {
+    globe.pathsData([]);
+    updateLegend();
+    return;
+  }
+  try {
+    const d = await loadCurrents();
+    currentsData = d;
+    if (currentsOn && !metric) {
+      globe.pathColor((line) => currentColor(line.s, d.speed_p90)).pathsData(d.lines);
+    }
+  } catch (err) {
+    currentsOn = false;
+    $('#theme-menu [data-id="__currents"]')?.setAttribute('aria-checked', 'false');
+    toast(`Ocean currents unavailable (${err.message})`);
+  }
+  updateLegend();
 }
 
 function metricCap(d) {

@@ -79,6 +79,15 @@ const FACTOR_LABELS = {
 // compare across countries; a share-of-own-score scale made low scorers' bars look longer.
 const FACTOR_SCALE = 3;
 
+function safeHappiness(c) {
+  try {
+    return happiness(c);
+  } catch (err) {
+    console.error('happiness card', err);
+    return '';
+  }
+}
+
 function happiness(c) {
   if (c.happiness_score == null) return '';
   const f = c.happiness_factors ?? {};
@@ -108,12 +117,19 @@ function happiness(c) {
         <div>
           <div class="k">${icon('smile')}Happiness · life evaluation</div>
           <div class="le-value">${total.toFixed(2)} <span>/ 10</span></div>
-          <div class="r">#${c.happiness_rank} of ${c.happiness_count} countries · ${c.happiness_year}${stale}
-            · likely range ${c.happiness_lower.toFixed(2)}–${c.happiness_upper.toFixed(2)}</div>
+          <div class="r">${c.happiness_rank ? `#${c.happiness_rank} of ${c.happiness_count} countries · ` : ''}${c.happiness_year}${stale}${
+            c.happiness_lower != null && c.happiness_upper != null
+              ? ` · likely range ${c.happiness_lower.toFixed(2)}–${c.happiness_upper.toFixed(2)}`
+              : ''
+          }</div>
         </div>
       </div>
       ${chart}
-      ${bars ? `<h3 class="air-sub happy-sub">What explains the score</h3><div class="hf">${bars}</div>` : ''}
+      ${
+        bars
+          ? `<h3 class="air-sub happy-sub">What explains the score</h3><div class="hf">${bars}</div>`
+          : '<p class="muted happy-note">No breakdown of the score is published for this survey year.</p>'
+      }
       <p class="data-credit">People's own rating of their lives (0 = worst possible, 10 = best), 3-year average.
         Source: <a href="https://worldhappiness.report/" target="_blank" rel="noopener">World Happiness Report 2026</a> (Gallup World Poll).</p>
     </section>`;
@@ -123,7 +139,7 @@ export function renderHealth(summary, c) {
   const byCode = Object.fromEntries((c.health ?? []).map((h) => [h.code, h]));
   const head = `<h1>${flag(c.iso2)}${esc(c.name)}</h1>`;
   if (!c.health?.length) {
-    return `<div class="wiki">${head}${airPlaceholder()}${happiness(c)}<p class="muted">The World Bank doesn't publish health indicators for ${esc(c.name)}.</p></div>`;
+    return `<div class="wiki">${head}${airPlaceholder()}${safeHappiness(c)}<p class="muted">The World Bank doesn't publish health indicators for ${esc(c.name)}.</p></div>`;
   }
 
   const le = byCode['SP.DYN.LE00.IN'];
@@ -151,7 +167,7 @@ export function renderHealth(summary, c) {
   return `<div class="wiki">
     ${head}
     ${airPlaceholder()}
-    ${happiness(c)}
+    ${safeHappiness(c)}
     <p class="news-sub">${c.income_group ? `${esc(c.income_group)} economy · ` : ''}World Bank figures, latest available year for each</p>
     ${hero}
     ${groups}
